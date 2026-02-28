@@ -4,6 +4,7 @@
   "version": "1.2.2.1",
   "config_flow": true,
   "documentation": "https://github.com/fangwenyi-dev/ha-window-controller-gateway",
+  "issue_tracker": "https://github.com/fangwenyi-dev/ha-window-controller-gateway/issues",
   "requirements": [],
   "dependencies": ["mqtt"],
   "codeowners": ["@fangwenyi-dev"],
