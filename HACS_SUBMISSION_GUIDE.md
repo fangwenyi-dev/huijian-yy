@@ -10,7 +10,7 @@
 - issue_tracker (使用 GitHub)
 - codeowners
 - name
-- version: 1.2.2.2
+- version: 1.2.3
 
 ✅ **hacs.json** - 已配置
 - name: 慧尖开窗器网关
