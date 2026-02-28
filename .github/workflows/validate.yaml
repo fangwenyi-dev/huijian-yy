@@ -16,4 +16,6 @@ jobs:
           category: integration
 
       - name: Hassfest validation
-        uses: home-assistant/actions@hassfest
+        run: |
+          pip install home-assistant-widget
+          python -m homeassistant.tools.hassfest .
