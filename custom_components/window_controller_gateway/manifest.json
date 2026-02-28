@@ -1,7 +1,7 @@
 {
   "domain": "window_controller_gateway",
-  "name": "慧尖开窗器网关",
-  "version": "1.2.2.1",
+  "name": "Huijian Window Controller Gateway",
+  "version": "1.2.2.2",
   "config_flow": true,
   "documentation": "https://github.com/fangwenyi-dev/ha-window-controller-gateway",
   "issue_tracker": "https://github.com/fangwenyi-dev/ha-window-controller-gateway/issues",
@@ -10,13 +10,12 @@
   "codeowners": ["@fangwenyi-dev"],
   "iot_class": "local_polling",
   "service_yaml": "services.yaml",
-  "icon": "icons/icon.png",
+  "icon": "mdi:window-open-variant",
+  "integration_type": "device",
   "platforms": ["cover", "binary_sensor", "button", "sensor"],
   "local_only": false,
   "brand": {
-    "name": "慧尖",
-    "manufacturer": "Huijian Intelligent Technology",
-    "hide_from_cloud": false
-  },
-  "quality_scale": "gold"
+    "name": "Huijian",
+    "manufacturer": "Huijian Intelligent Technology"
+  }
 }

@@ -1,0 +1,9 @@
+{
+  "device_type": {
+    "window_controller": "mdi:window-open-variant",
+    "window_opener": "mdi:window-open"
+  },
+  "entity": {
+    "window_controller_gateway": "mdi:window-open-variant"
+  }
+}

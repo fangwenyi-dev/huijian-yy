@@ -837,21 +837,17 @@ class WindowControllerMQTTHandler:
             }
             
             # 发送响应到网关 - 按照协议要求发送到gateway/<sn>/req主题
-            self.hass.create_task(
-                mqtt.async_publish(
-                    self.hass,
-                    self.TOPIC_GATEWAY_REQ,
-                    json.dumps(response_payload),
-                    1,
-                    False
-                )
+            await mqtt.async_publish(
+                self.hass,
+                self.TOPIC_GATEWAY_REQ,
+                json.dumps(response_payload),
+                1,
+                False
             )
             _LOGGER.info("发送网关设备信息响应成功到主题: %s", self.TOPIC_GATEWAY_REQ)
             
             # 更新网关状态为在线
-            self.hass.create_task(
-                self.device_manager.update_gateway_status("online")
-            )
+            await self.device_manager.update_gateway_status("online")
             self.connected = True
             self._notify_status_change()
         elif "errcode" not in data:
@@ -871,21 +867,17 @@ class WindowControllerMQTTHandler:
             }
             
             # 发送响应到网关 - 按照协议要求发送到gateway/<sn>/req主题
-            self.hass.create_task(
-                mqtt.async_publish(
-                    self.hass,
-                    self.TOPIC_GATEWAY_REQ,
-                    json.dumps(response_payload),
-                    1,
-                    False
-                )
+            await mqtt.async_publish(
+                self.hass,
+                self.TOPIC_GATEWAY_REQ,
+                json.dumps(response_payload),
+                1,
+                False
             )
             _LOGGER.info("发送网关绑定响应成功到主题: %s", self.TOPIC_GATEWAY_REQ)
             
             # 更新网关状态
-            self.hass.create_task(
-                self.device_manager.update_gateway_status("online")
-            )
+            await self.device_manager.update_gateway_status("online")
             self.connected = True
             self._notify_status_change()
         else:
@@ -893,9 +885,7 @@ class WindowControllerMQTTHandler:
             errcode = data.get("errcode", -1)
             if errcode == 0:
                 _LOGGER.info("网关绑定成功: %s", self.gateway_sn)
-                self.hass.create_task(
-                    self.device_manager.update_gateway_status("online")
-                )
+                await self.device_manager.update_gateway_status("online")
                 self.connected = True
                 self._notify_status_change()
             else:
@@ -908,10 +898,7 @@ class WindowControllerMQTTHandler:
         try:
             status = data.get("status", "unknown")
             _LOGGER.debug("网关状态上报: %s", status)
-            # 使用async_create_task包装异步操作
-            self.hass.create_task(
-                self.device_manager.update_gateway_status(status)
-            )
+            await self.device_manager.update_gateway_status(status)
             self.connected = True  # 收到上报就认为在线
             self._notify_status_change()
             
@@ -919,9 +906,7 @@ class WindowControllerMQTTHandler:
             try:
                 from .discovery import async_discover_gateway
                 gateway_name = f"慧尖网关 {self.gateway_sn[-4:]}"
-                self.hass.create_task(
-                    async_discover_gateway(self.hass, self.gateway_sn, gateway_name)
-                )
+                await async_discover_gateway(self.hass, self.gateway_sn, gateway_name)
                 _LOGGER.debug("触发网关发现，确保忽略按钮显示")
             except Exception as e:
                 _LOGGER.debug("触发网关发现失败: %s", e)
@@ -1010,14 +995,12 @@ class WindowControllerMQTTHandler:
         
         # 发送响应到网关 - 按照协议要求发送到gateway/<sn>/req主题
         from homeassistant.components import mqtt
-        self.hass.create_task(
-            mqtt.async_publish(
-                self.hass,
-                self.TOPIC_GATEWAY_REQ,
-                json.dumps(response_payload),
-                1,
-                False
-            )
+        await mqtt.async_publish(
+            self.hass,
+            self.TOPIC_GATEWAY_REQ,
+            json.dumps(response_payload),
+            1,
+            False
         )
         _LOGGER.info("发送网关状态上报响应成功到主题: %s", self.TOPIC_GATEWAY_REQ)
 
@@ -1107,9 +1090,7 @@ class WindowControllerMQTTHandler:
             device_number = device_count + 1
             device_name = f"开窗器 {device_number:02d}"
             # 手动配对时使用 is_manual_pairing=True，跳过手动删除列表检查
-            self.hass.create_task(
-                self.device_manager.add_device(device_sn, device_name, DEVICE_TYPE_WINDOW_OPENER, is_manual_pairing=True)
-            )
+            await self.device_manager.add_device(device_sn, device_name, DEVICE_TYPE_WINDOW_OPENER, is_manual_pairing=True)
             _LOGGER.info("设备绑定成功: %s, 名称: %s", device_sn, device_name)
         else:
             # 错误码7可能表示通讯距离不够，不记录为错误
@@ -1182,9 +1163,7 @@ class WindowControllerMQTTHandler:
                             status = "open"
             
             # 更新设备状态
-            self.hass.create_task(
-                self.device_manager.update_device_status(device_sn, status, attributes)
-            )
+            await self.device_manager.update_device_status(device_sn, status, attributes)
             # 通知设备状态变化，触发传感器实体更新
             self._notify_device_status_change(device_sn)
             _LOGGER.debug("设备上报处理完成: %s", device_sn)
