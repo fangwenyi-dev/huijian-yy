@@ -4,6 +4,7 @@
     "window_opener": "mdi:window-open"
   },
   "entity": {
-    "window_controller_gateway": "mdi:window-open-variant"
+    "window_controller_gateway": "mdi:window-open-variant",
+    "huijian": "brand:huijian"
   }
 }
