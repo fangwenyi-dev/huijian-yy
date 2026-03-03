@@ -352,7 +352,7 @@ async def async_setup_entry(
     _LOGGER.info("按钮平台: 获取到 %d 个设备: %s", len(devices), [d.get("sn") for d in devices])
     
     if not devices:
-        _LOGGER.warning("按钮平台: 没有设备，尝试手动触发设备发现")
+        _LOGGER.info("按钮平台: 没有设备，尝试手动触发设备发现")
         # 尝试从映射表获取设备
         from . import DEVICE_TO_GATEWAY_MAPPING
         if DEVICE_TO_GATEWAY_MAPPING in hass.data[DOMAIN]:
