@@ -503,7 +503,7 @@ class WindowControllerDeviceManager:
             
             # 如果没有匹配到设备，尝试更新映射表
             if processed_count == 0 and device_to_gateway_mapping:
-                _LOGGER.info("没有匹配到设备，尝试更新映射表")
+                _LOGGER.debug("没有匹配到设备，尝试更新映射表")
                 # 检查是否有设备的网关SN与当前网关SN相似
                 for device_sn, mapped_gateway_sn in list(device_to_gateway_mapping.items()):
                     mapped_lower = mapped_gateway_sn.lower()

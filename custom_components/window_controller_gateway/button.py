@@ -61,7 +61,7 @@ def _check_entity_exists(hass, platform, domain, unique_id):
     return entity_id is not None
 
 
-def _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, entry_id):
+def _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, entry_id, entity_registry=None):
     """为设备创建所有按钮实体
     
     Args:
@@ -72,10 +72,18 @@ def _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, devic
         device_sn: 设备SN
         device_name: 设备名称
         entry_id: 配置条目ID
+        entity_registry: 可选，实体注册表用于检查重复
     
     Returns:
         list: 要添加的按钮实体列表
     """
+    # 如果传入了 entity_registry，检查第一个按钮是否已存在
+    if entity_registry is not None:
+        first_button_unique_id = f"{gateway_sn}_{device_sn}_open"
+        if entity_registry.async_get_entity_id("button", DOMAIN, first_button_unique_id) is not None:
+            _LOGGER.debug("设备 %s 的按钮已存在，跳过创建", device_sn)
+            return []
+    
     entities_to_add = []
     
     # 按钮配置
@@ -318,23 +326,29 @@ async def async_setup_entry(
     gateway_sn = entry.data[CONF_GATEWAY_SN]
     gateway_name = entry.data.get(CONF_GATEWAY_NAME, f"{DEFAULT_GATEWAY_NAME} {gateway_sn[-6:]}")
     
+    # 检查实体是否已存在（避免重复创建）
+    entity_registry = get_entity_registry(hass)
+    
     # 存储已创建的删除按钮，用于后续清理
-    # 始终使用空字典，避免组件重载时重复创建已存在的实体
     created_remove_buttons = {}
     
     # 添加按钮实体
     entities = []
     
-    # 添加配对按钮
-    pairing_button = GatewayPairingButton(
-        hass,
-        device_manager,
-        mqtt_handler,
-        gateway_sn,
-        gateway_name,
-        str(entry.entry_id)
-    )
-    entities.append(pairing_button)
+    # 添加配对按钮（检查是否已存在）
+    pairing_unique_id = f"{gateway_sn}_pairing"
+    if entity_registry.async_get_entity_id("button", DOMAIN, pairing_unique_id) is None:
+        pairing_button = GatewayPairingButton(
+            hass,
+            device_manager,
+            mqtt_handler,
+            gateway_sn,
+            gateway_name,
+            str(entry.entry_id)
+        )
+        entities.append(pairing_button)
+    else:
+        _LOGGER.info("配对按钮已存在，跳过创建: %s", pairing_unique_id)
     
     # 添加网关替换按钮 - 暂时注释，保留功能但不显示
     # replace_button = GatewayReplaceButton(
@@ -352,7 +366,7 @@ async def async_setup_entry(
     _LOGGER.info("按钮平台: 获取到 %d 个设备: %s", len(devices), [d.get("sn") for d in devices])
     
     if not devices:
-        _LOGGER.info("按钮平台: 没有设备，尝试手动触发设备发现")
+        _LOGGER.debug("按钮平台: 没有设备，尝试手动触发设备发现")
         # 尝试从映射表获取设备
         from . import DEVICE_TO_GATEWAY_MAPPING
         if DEVICE_TO_GATEWAY_MAPPING in hass.data[DOMAIN]:
@@ -364,22 +378,27 @@ async def async_setup_entry(
                     device_name = f"开窗器 {gateway_sn[-4:]}-{device_sn[-4:]}"
                     _LOGGER.info("按钮平台: 从映射表加载设备: %s", device_sn)
                     
-                    remove_button = GatewayDeviceRemoveButton(
-                        hass,
-                        device_manager,
-                        mqtt_handler,
-                        gateway_sn,
-                        gateway_name,
-                        device_sn,
-                        device_name,
-                        str(entry.entry_id)
-                    )
-                    entities.append(remove_button)
-                    created_remove_buttons[device_sn] = remove_button
-                    
-                    device_buttons = _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, str(entry.entry_id))
-                    entities.extend(device_buttons)
-                    _LOGGER.info("按钮平台: 从映射表添加了设备 %s 的按钮", device_sn)
+                    # 检查按钮是否已存在
+                    remove_button_unique_id = f"{gateway_sn}_remove_{device_sn}"
+                    if entity_registry.async_get_entity_id("button", DOMAIN, remove_button_unique_id) is None:
+                        remove_button = GatewayDeviceRemoveButton(
+                            hass,
+                            device_manager,
+                            mqtt_handler,
+                            gateway_sn,
+                            gateway_name,
+                            device_sn,
+                            device_name,
+                            str(entry.entry_id)
+                        )
+                        entities.append(remove_button)
+                        created_remove_buttons[device_sn] = remove_button
+                        
+                        device_buttons = _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, str(entry.entry_id))
+                        entities.extend(device_buttons)
+                        _LOGGER.info("按钮平台: 从映射表添加了设备 %s 的按钮", device_sn)
+                    else:
+                        _LOGGER.debug("设备 %s 的按钮已存在，从映射表跳过", device_sn)
     
     for device in devices:
         _LOGGER.debug("处理设备: %s, 类型: %s", device.get("sn"), device.get("type"))
@@ -387,57 +406,72 @@ async def async_setup_entry(
             device_sn = device["sn"]
             device_name = device["name"]
             
-            # 生成删除按钮的唯一ID
-            remove_button_unique_id = f"{entry.entry_id}_{gateway_sn}_{device_sn}_remove"
+            # 检查删除按钮是否已存在
+            remove_button_unique_id = f"{gateway_sn}_remove_{device_sn}"
+            if entity_registry.async_get_entity_id("button", DOMAIN, remove_button_unique_id) is None:
+                remove_button = GatewayDeviceRemoveButton(
+                    hass,
+                    device_manager,
+                    mqtt_handler,
+                    gateway_sn,
+                    gateway_name,
+                    device_sn,
+                    device_name,
+                    str(entry.entry_id)
+                )
+                entities.append(remove_button)
+                created_remove_buttons[device_sn] = remove_button
+                _LOGGER.debug("为设备 %s 添加删除按钮", device_name)
+            else:
+                _LOGGER.debug("删除按钮已存在，跳过: %s", remove_button_unique_id)
             
-            # 直接添加删除按钮，不检查实体是否存在
-            # HA 会自动处理重复实体，确保按钮始终可用
-            remove_button = GatewayDeviceRemoveButton(
-                hass,
-                device_manager,
-                mqtt_handler,
-                gateway_sn,
-                gateway_name,
-                device_sn,
-                device_name,
-                str(entry.entry_id)
-            )
-            entities.append(remove_button)
-            created_remove_buttons[device_sn] = remove_button
-            _LOGGER.debug("为设备 %s 添加删除按钮", device_name)
-            
-            device_buttons = _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, str(entry.entry_id))
-            _LOGGER.debug("设备 %s 创建了 %d 个按钮", device_sn, len(device_buttons))
-            entities.extend(device_buttons)
+            # 检查设备的控制按钮是否已存在（使用不带entry_id的unique_id格式与v1.1.8保持一致）
+            first_button_unique_id = f"{gateway_sn}_{device_sn}_open"
+            if entity_registry.async_get_entity_id("button", DOMAIN, first_button_unique_id) is None:
+                device_buttons = _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, str(entry.entry_id))
+                if device_buttons:
+                    _LOGGER.debug("设备 %s 创建了 %d 个按钮", device_sn, len(device_buttons))
+                    entities.extend(device_buttons)
+            else:
+                _LOGGER.debug("设备 %s 的控制按钮已存在，跳过创建", device_sn)
     
     # 定义设备添加回调函数
     async def on_device_added(device_sn: str, device_name: str, device_type: str):
         """设备添加回调，自动创建按钮"""
         if device_type == DEVICE_TYPE_WINDOW_OPENER:
+            # 检查删除按钮是否已存在
+            remove_button_unique_id = f"{gateway_sn}_remove_{device_sn}"
+            if entity_registry.async_get_entity_id("button", DOMAIN, remove_button_unique_id) is not None:
+                _LOGGER.debug("设备 %s 的按钮已存在，跳过创建", device_sn)
+                return
+            
             # 存储要添加的实体
             entities_to_add = []
             
-            # 直接添加删除按钮，不检查实体是否存在
-            # HA 会自动处理重复实体，确保按钮始终可用
-            remove_button = GatewayDeviceRemoveButton(
-                hass,
-                device_manager,
-                mqtt_handler,
-                gateway_sn,
-                gateway_name,
-                device_sn,
-                device_name,
-                str(entry.entry_id)
-            )
-            entities_to_add.append(remove_button)
-            created_remove_buttons[device_sn] = remove_button
-            # 更新entry_data中的删除按钮跟踪信息
-            entry_data["created_remove_buttons"] = created_remove_buttons
-            _LOGGER.debug("为设备 %s 添加删除按钮", device_name)
+            # 检查删除按钮是否已存在
+            if entity_registry.async_get_entity_id("button", DOMAIN, remove_button_unique_id) is None:
+                remove_button = GatewayDeviceRemoveButton(
+                    hass,
+                    device_manager,
+                    mqtt_handler,
+                    gateway_sn,
+                    gateway_name,
+                    device_sn,
+                    device_name,
+                    str(entry.entry_id)
+                )
+                entities_to_add.append(remove_button)
+                created_remove_buttons[device_sn] = remove_button
+                # 更新entry_data中的删除按钮跟踪信息
+                entry_data["created_remove_buttons"] = created_remove_buttons
+                _LOGGER.debug("为设备 %s 添加删除按钮", device_name)
             
-            # 为设备创建所有按钮
-            device_buttons = _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, str(entry.entry_id))
-            entities_to_add.extend(device_buttons)
+            # 检查设备的控制按钮是否已存在
+            first_button_unique_id = f"{gateway_sn}_{device_sn}_open"
+            if entity_registry.async_get_entity_id("button", DOMAIN, first_button_unique_id) is None:
+                # 为设备创建所有按钮
+                device_buttons = _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, str(entry.entry_id))
+                entities_to_add.extend(device_buttons)
             
             # 只有当有实体需要添加时才调用async_add_entities
             if entities_to_add:
