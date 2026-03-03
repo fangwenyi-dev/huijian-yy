@@ -82,6 +82,7 @@ class WindowControllerCover(CoverEntity):
         self.device_sn = device_sn
         self._attr_name = device_name
         self.device_type = device_type
+        # unique_id基于网关SN和设备SN（Cover实体已禁用，保留以备将来使用）
         self._attr_unique_id = f"{gateway_sn}_{device_sn}"
         self._attr_device_class = self._get_device_class(device_type)
         # 添加图标

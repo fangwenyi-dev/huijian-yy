@@ -55,7 +55,7 @@ class GatewayOnlineSensor(BinarySensorEntity):
         self.gateway_name = gateway_name
         self.entry_id = entry_id
         self._attr_name = f"{gateway_name} 在线"
-        # unique_id基于网关SN，确保同一网关只有一个在线状态传感器
+        # unique_id基于entry_id和网关SN，确保不同配置条目的实体有不同的unique_id
         self._attr_unique_id = f"{gateway_sn}_online"
         self._attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
         self._attr_is_on = False
@@ -130,7 +130,7 @@ class GatewayPairingButton(ButtonEntity):
         self.gateway_name = gateway_name
         self.entry_id = entry_id
         self._attr_name = f"{gateway_name} 配对"
-        # unique_id基于网关SN，确保同一网关只有一个配对按钮
+        # unique_id 基于网关SN，与v1.1.8保持一致
         self._attr_unique_id = f"{gateway_sn}_pairing"
         # 添加图标
         self._attr_icon = "mdi:plus-circle"
@@ -230,7 +230,7 @@ class GatewayDeviceRemoveButton(ButtonEntity):
         self.device_name = device_name
         self.entry_id = entry_id
         self._attr_name = f"开窗器 {device_sn[-4:]} 删除"
-        # unique_id基于网关SN和设备SN，确保同一网关的同一设备只有一个删除按钮
+        # unique_id 基于网关SN和设备SN，与v1.1.8保持一致
         self._attr_unique_id = f"{gateway_sn}_remove_{device_sn}"
         # 添加图标
         self._attr_icon = "mdi:delete"
@@ -332,7 +332,7 @@ class GatewayReplaceButton(ButtonEntity):
         self.gateway_name = gateway_name
         self.entry_id = entry_id
         self._attr_name = f"{gateway_name} 替换旧网关"
-        # unique_id基于网关SN，确保同一网关只有一个替换按钮
+        # unique_id 基于网关SN，与v1.1.8保持一致
         self._attr_unique_id = f"{gateway_sn}_replace"
         # 添加图标
         self._attr_icon = "mdi:gateway-transfer"

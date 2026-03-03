@@ -138,7 +138,7 @@ class BaseWindowControllerButton(WindowControllerBaseEntity, ButtonEntity):
         )
         
         self._attr_name = button_name
-        # unique_id基于网关SN和设备SN，确保不同网关的同一设备有不同的实体
+        # unique_id 基于设备SN，与v1.1.8保持一致
         self._attr_unique_id = f"{gateway_sn}_{device_sn}_{button_type}"
         self._attr_icon = icon
         self.command = command
@@ -350,6 +350,37 @@ async def async_setup_entry(
     # 为每个开窗器设备添加删除按钮（显示在网关控制栏）
     devices = device_manager.get_all_devices()
     _LOGGER.info("按钮平台: 获取到 %d 个设备: %s", len(devices), [d.get("sn") for d in devices])
+    
+    if not devices:
+        _LOGGER.warning("按钮平台: 没有设备，尝试手动触发设备发现")
+        # 尝试从映射表获取设备
+        from . import DEVICE_TO_GATEWAY_MAPPING
+        if DEVICE_TO_GATEWAY_MAPPING in hass.data[DOMAIN]:
+            mapping = hass.data[DOMAIN][DEVICE_TO_GATEWAY_MAPPING]
+            _LOGGER.info("按钮平台: 映射表内容: %s", mapping)
+            # 为映射表中的每个设备创建按钮
+            for device_sn, gw_sn in mapping.items():
+                if gw_sn == gateway_sn:
+                    device_name = f"开窗器 {gateway_sn[-4:]}-{device_sn[-4:]}"
+                    _LOGGER.info("按钮平台: 从映射表加载设备: %s", device_sn)
+                    
+                    remove_button = GatewayDeviceRemoveButton(
+                        hass,
+                        device_manager,
+                        mqtt_handler,
+                        gateway_sn,
+                        gateway_name,
+                        device_sn,
+                        device_name,
+                        str(entry.entry_id)
+                    )
+                    entities.append(remove_button)
+                    created_remove_buttons[device_sn] = remove_button
+                    
+                    device_buttons = _create_device_buttons(hass, device_manager, mqtt_handler, gateway_sn, device_sn, device_name, str(entry.entry_id))
+                    entities.extend(device_buttons)
+                    _LOGGER.info("按钮平台: 从映射表添加了设备 %s 的按钮", device_sn)
+    
     for device in devices:
         _LOGGER.debug("处理设备: %s, 类型: %s", device.get("sn"), device.get("type"))
         if device["type"] == DEVICE_TYPE_WINDOW_OPENER:
@@ -357,7 +388,7 @@ async def async_setup_entry(
             device_name = device["name"]
             
             # 生成删除按钮的唯一ID
-            remove_button_unique_id = f"{gateway_sn}_remove_{device_sn}"
+            remove_button_unique_id = f"{entry.entry_id}_{gateway_sn}_{device_sn}_remove"
             
             # 直接添加删除按钮，不检查实体是否存在
             # HA 会自动处理重复实体，确保按钮始终可用
@@ -436,10 +467,10 @@ async def async_setup_entry(
                         entity_registry.async_remove(remove_button.entity_id)
                         _LOGGER.info("已从实体注册表中删除设备 %s 的删除按钮", device_name)
                     
-                    # 生成并删除其他按钮实体ID
+                    # 生成并删除其他按钮实体ID（使用带entry_id的格式）
                     button_types = ["open", "stop", "close", "a"]
                     for button_type in button_types:
-                        button_unique_id = f"{device_sn}_{button_type}"
+                        button_unique_id = f"{entry.entry_id}_{gateway_sn}_{device_sn}_{button_type}"
                         # 查找并删除实体
                         entity_entry = entity_registry.async_get_entity_id("button", DOMAIN, button_unique_id)
                         if entity_entry:

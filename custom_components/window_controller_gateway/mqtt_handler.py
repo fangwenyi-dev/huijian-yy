@@ -59,6 +59,20 @@ class WindowControllerMQTTHandler:
         # 状态更新回调 - 使用字典按设备SN组织回调
         self._status_callbacks = {}
     
+    def _schedule_async_task(self, coro):
+        """安全地将异步任务调度到主事件循环
+        
+        在MQTT回调线程中正确调度协程到HA主事件循环执行
+        """
+        try:
+            loop = self.hass.loop
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(coro, loop)
+            else:
+                _LOGGER.warning("事件循环未运行，跳过任务调度")
+        except RuntimeError as e:
+            _LOGGER.error("调度异步任务失败: %s", e)
+    
     async def setup(self):
         """设置MQTT处理器"""
         _LOGGER.info("MQTT处理器初始化: %s", self.gateway_sn)
@@ -91,8 +105,7 @@ class WindowControllerMQTTHandler:
                                 self.connected = False
                                 self._notify_status_change()
                                 _LOGGER.warning("网关 %s 超过%s秒未上报，标记为离线", self.gateway_sn, GATEWAY_TIMEOUT_SECONDS)
-                                self.hass.loop.call_soon_threadsafe(
-                                    self.hass.async_create_task,
+                                self._schedule_async_task(
                                     self.device_manager.update_gateway_status("offline")
                                 )
                 except Exception as e:
@@ -137,8 +150,7 @@ class WindowControllerMQTTHandler:
                                     break
                             
                             # 触发网关发现，传入替换模式标志
-                            self.hass.loop.call_soon_threadsafe(
-                                self.hass.async_create_task,
+                            self._schedule_async_task(
                                 async_discover_gateway(self.hass, response_sn, gateway_name, replace_mode, self.gateway_sn)
                             )
                         except Exception as e:
@@ -169,8 +181,7 @@ class WindowControllerMQTTHandler:
                     }
                     
                     if ctype in ctype_handlers:
-                        self.hass.loop.call_soon_threadsafe(
-                            self.hass.async_create_task,
+                        self._schedule_async_task(
                             ctype_handlers[ctype](payload, ctype, data)
                         )
                     else:
@@ -192,8 +203,7 @@ class WindowControllerMQTTHandler:
                         device_name = device_info.get(ATTR_DEVICE_NAME, f"设备 {device_sn[-6:]}")
                         device_type = device_info.get("device_type", DEVICE_TYPE_WINDOW_OPENER)
                         
-                        self.hass.loop.call_soon_threadsafe(
-                            self.hass.async_create_task,
+                        self._schedule_async_task(
                             self.device_manager.add_device(device_sn, device_name, device_type)
                         )
                         
@@ -210,8 +220,7 @@ class WindowControllerMQTTHandler:
                     if ATTR_BATTERY in payload:
                         attributes[ATTR_BATTERY] = payload[ATTR_BATTERY]
                     
-                    self.hass.loop.call_soon_threadsafe(
-                        self.hass.async_create_task,
+                    self._schedule_async_task(
                         self.device_manager.update_device_status(device_sn, status, attributes)
                     )
                     
@@ -235,8 +244,7 @@ class WindowControllerMQTTHandler:
         except Exception as e:
             _LOGGER.error("订阅MQTT主题失败: %s", e)
             # 触发重连逻辑
-            self.hass.loop.call_soon_threadsafe(
-                self.hass.async_create_task,
+            self._schedule_async_task(
                 self._reconnect_mqtt()
             )
     
@@ -284,8 +292,7 @@ class WindowControllerMQTTHandler:
                     if self.connected:
                         self.connected = False
                         self._notify_status_change()
-                        self.hass.loop.call_soon_threadsafe(
-                            asyncio.create_task, 
+                        self._schedule_async_task(
                             self.device_manager.update_gateway_status("offline")
                         )
                     return
@@ -643,8 +650,7 @@ class WindowControllerMQTTHandler:
                 _LOGGER.debug("MQTT连接状态正常")
                 self._notify_status_change()
                 
-                self.hass.loop.call_soon_threadsafe(
-                    asyncio.create_task,
+                self._schedule_async_task(
                     self.device_manager.update_gateway_status("online")
                 )
         except Exception as e:
@@ -654,8 +660,7 @@ class WindowControllerMQTTHandler:
                 self.connected = False
                 self._notify_status_change()
                 
-                self.hass.loop.call_soon_threadsafe(
-                    asyncio.create_task,
+                self._schedule_async_task(
                     self.device_manager.update_gateway_status("offline")
                 )
         
@@ -674,8 +679,7 @@ class WindowControllerMQTTHandler:
         self.pairing_active = True
         self._notify_status_change()
         
-        self.hass.loop.call_soon_threadsafe(
-            asyncio.create_task,
+        self._schedule_async_task(
             self.device_manager.update_gateway_status("pairing")
         )
         
@@ -684,14 +688,12 @@ class WindowControllerMQTTHandler:
         async def pairing_timeout():
             self.pairing_active = False
             self._notify_status_change()
-            self.hass.loop.call_soon_threadsafe(
-                asyncio.create_task,
+            self._schedule_async_task(
                 self.device_manager.update_gateway_status("online" if self.connected else "offline")
             )
             _LOGGER.info("配对模式已超时，恢复正常状态")
         
-        self.hass.loop.call_later(duration, lambda: self.hass.loop.call_soon_threadsafe(
-            asyncio.create_task, pairing_timeout()))
+        self.hass.loop.call_later(duration, lambda: self._schedule_async_task(pairing_timeout()))
     
     async def unbind_device(self, device_sn: str):
         """解绑设备 - 使用协议类型003，bind=0"""

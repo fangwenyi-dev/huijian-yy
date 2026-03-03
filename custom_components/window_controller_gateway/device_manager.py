@@ -105,12 +105,12 @@ class DeviceCacheManager:
     def _evict_cache(self) -> None:
         """缓存淘汰机制"""
         try:
-            # 计算当前缓存大小
-            current_size = sum(len(devices) for devices in self._cache.values())
+            # 计算当前缓存大小（网关数量）
+            current_gateway_count = len(self._cache)
             
-            if current_size > self._max_cache_size:
-                # 需要淘汰的设备数
-                evict_count = current_size - self._max_cache_size
+            if current_gateway_count > self._max_cache_size:
+                # 需要淘汰的网关数
+                evict_count = current_gateway_count - self._max_cache_size
                 
                 # 按照优先级和最后访问时间排序，选择要淘汰的缓存项
                 cache_items = []
@@ -148,10 +148,10 @@ class DeviceCacheManager:
                     if gateway_sn in self._cache_invalidation_events:
                         self._cache_invalidation_events.remove(gateway_sn)
                     
-                    evicted_count += device_count
+                    evicted_count += 1
                     _LOGGER.debug("缓存淘汰: 网关 %s，设备数: %d", gateway_sn, device_count)
                 
-                _LOGGER.info("缓存淘汰完成，淘汰设备数: %d", evicted_count)
+                _LOGGER.info("缓存淘汰完成，淘汰网关数: %d", evicted_count)
         except Exception as e:
             _LOGGER.error("缓存淘汰失败: %s", e)
     
@@ -444,9 +444,34 @@ class WindowControllerDeviceManager:
             _LOGGER.info("设备映射表内容: %s", device_to_gateway_mapping)
             
             # 遍历映射表，加载属于当前网关的设备（忽略大小写）
-            for device_sn, gateway_sn in device_to_gateway_mapping.items():
-                # 标准化比较
-                if gateway_sn.lower() == gateway_sn_lower and device_sn not in self.devices:
+            for device_sn, mapped_gateway_sn in device_to_gateway_mapping.items():
+                # 标准化比较 - 支持多种匹配方式
+                _LOGGER.info("检查设备映射: device_sn=%s, mapped_gateway=%s, current_gateway=%s", device_sn, mapped_gateway_sn, self.gateway_sn)
+                
+                # 当前网关SN
+                current_lower = self.gateway_sn.lower()
+                mapped_lower = mapped_gateway_sn.lower()
+                
+                # 各种匹配方式
+                exact_match = (mapped_lower == current_lower)
+                # 检查当前网关是否以映射的网关SN开头（当前网关可能更长）
+                prefix_match = current_lower.startswith(mapped_lower)
+                # 检查映射的网关SN是否以当前网关SN开头（映射的网关可能更长）
+                prefix_match_reverse = mapped_lower.startswith(current_lower)
+                # 包含匹配：检查任意一个是否包含另一个
+                contains_match = (mapped_lower in current_lower) or (current_lower in mapped_lower)
+                # 截断比较：取较短的SN的最后8位
+                short_len = min(len(current_lower), len(mapped_lower), 8)
+                truncate_match = (current_lower[-short_len:] == mapped_lower[-short_len:]) if short_len > 0 else False
+                # 最后8位匹配：这是最常用的匹配方式
+                last8_match = (current_lower[-8:] == mapped_lower[-8:])
+                
+                gateway_match = exact_match or prefix_match or prefix_match_reverse or contains_match or truncate_match or last8_match
+                
+                _LOGGER.info("网关匹配计算: exact=%s, prefix=%s, prefix_rev=%s, contains=%s, truncate=%s, last8=%s, final=%s", 
+                           exact_match, prefix_match, prefix_match_reverse, contains_match, truncate_match, last8_match, gateway_match)
+                
+                if gateway_match and device_sn not in self.devices:
                     device_name = f"开窗器 {self.gateway_sn[-4:]}-{device_sn[-4:]}"
                     
                     # 同步添加到内存字典中
@@ -475,6 +500,43 @@ class WindowControllerDeviceManager:
                     processed_count += 1
             
             _LOGGER.info("当前网关 %s 共加载 %d 个设备", self.gateway_sn, processed_count)
+            
+            # 如果没有匹配到设备，尝试更新映射表
+            if processed_count == 0 and device_to_gateway_mapping:
+                _LOGGER.warning("没有匹配到设备，尝试更新映射表")
+                # 检查是否有设备的网关SN与当前网关SN相似
+                for device_sn, mapped_gateway_sn in list(device_to_gateway_mapping.items()):
+                    mapped_lower = mapped_gateway_sn.lower()
+                    current_lower = self.gateway_sn.lower()
+                    # 检查最后8位是否匹配
+                    if mapped_lower[-8:] == current_lower[-8:]:
+                        _LOGGER.info("发现相似网关SN: mapped=%s, current=%s, 更新映射表", mapped_gateway_sn, self.gateway_sn)
+                        # 更新映射表
+                        device_to_gateway_mapping[device_sn] = self.gateway_sn
+                        # 立即加载这个设备
+                        device_name = f"开窗器 {self.gateway_sn[-4:]}-{device_sn[-4:]}"
+                        self.devices[device_sn] = {
+                            "sn": device_sn,
+                            "name": device_name,
+                            "type": DEVICE_TYPE_WINDOW_OPENER,
+                            "status": "offline",
+                            "attributes": {}
+                        }
+                        _LOGGER.info("更新后加载设备: %s", device_sn)
+                        
+                        # 触发设备添加回调
+                        for callback in self._device_added_callbacks:
+                            try:
+                                self.hass.create_task(callback(device_sn, device_name, DEVICE_TYPE_WINDOW_OPENER))
+                            except Exception as e:
+                                _LOGGER.error("调用设备添加回调失败: %s", e)
+                        
+                        processed_count += 1
+                
+                # 保存更新后的映射表
+                if processed_count > 0:
+                    self.hass.data[DOMAIN][DEVICE_TO_GATEWAY_MAPPING] = device_to_gateway_mapping
+                    _LOGGER.info("映射表已更新并保存")
         else:
             _LOGGER.info("设备到网关映射表不存在")
         

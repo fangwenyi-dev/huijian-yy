@@ -56,7 +56,7 @@ class WindowControllerBatterySensor(WindowControllerBaseEntity, SensorEntity):
         )
         
         self._attr_name = f"{device_name} 电池电压"
-        # unique_id基于网关SN和设备SN，确保不同网关的同一设备有不同的实体
+        # unique_id 基于设备SN，与v1.1.8保持一致
         self._attr_unique_id = f"{gateway_sn}_{device_sn}_battery"
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = "measurement"
@@ -133,7 +133,7 @@ class WindowControllerStatusSensor(SensorEntity):
         self._device_name = device_name
         self.entry_id = entry_id
         self._attr_name = f"{device_name} 状态"
-        # unique_id基于网关SN和设备SN，确保不同网关的同一设备有不同的实体
+        # unique_id 基于设备SN，与v1.1.8保持一致
         self._attr_unique_id = f"{gateway_sn}_{device_sn}_status"
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_options = ["closed", "open"]
