@@ -134,6 +134,8 @@ class GatewayPairingButton(ButtonEntity):
         self._attr_unique_id = f"{gateway_sn}_pairing"
         # 添加图标
         self._attr_icon = "mdi:plus-circle"
+        # 确保按钮始终可用
+        self._attr_available = True
     
     @property
     def device_info(self) -> DeviceInfo:
@@ -234,6 +236,8 @@ class GatewayDeviceRemoveButton(ButtonEntity):
         self._attr_unique_id = f"{gateway_sn}_remove_{device_sn}"
         # 添加图标
         self._attr_icon = "mdi:delete"
+        # 确保按钮始终可用
+        self._attr_available = True
     
     @property
     def device_info(self) -> DeviceInfo:
@@ -340,6 +344,8 @@ class GatewayReplaceButton(ButtonEntity):
         self.device_id = gateway_sn
         # 添加防重复点击标志
         self._is_processing = False
+        # 确保按钮始终可用
+        self._attr_available = True
     
     @property
     def device_info(self) -> DeviceInfo:
