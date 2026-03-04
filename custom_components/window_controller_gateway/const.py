@@ -87,7 +87,7 @@ class MqttConstants:
     """MQTT相关常量"""
     DEFAULT_COMMAND_ID = 1  # 命令ID初始值
     MAX_COMMAND_ID = 999999  # 命令ID最大值（6位数字，足够使用）
-    GATEWAY_TIMEOUT_SECONDS = 1200  # 网关超时时间（20分钟）
+    GATEWAY_TIMEOUT_SECONDS = 1800  # 网关超时时间（30分钟）
     TOPIC_GATEWAY_REQ_FORMAT = "gateway/{gateway_sn}/req"  # 发送命令到网关的主题格式
     TOPIC_GATEWAY_RSP = "gateway/rpt_rsp"  # 接收网关数据和响应的主题
     MQTT_MAX_RETRIES = 5  # MQTT最大重试次数
