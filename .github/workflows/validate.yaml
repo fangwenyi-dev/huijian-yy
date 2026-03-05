@@ -17,5 +17,5 @@ jobs:
 
       - name: Hassfest validation
         run: |
-          pip install home-assistant-widget
+          pip install homeassistant
           python -m homeassistant.tools.hassfest .
