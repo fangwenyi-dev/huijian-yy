@@ -17,5 +17,6 @@ jobs:
 
       - name: Hassfest validation
         run: |
-          pip install homeassistant
-          python -m homeassistant.tools.hassfest .
+          git clone https://github.com/home-assistant/core.git /tmp/homeassistant
+          cd /tmp/homeassistant
+          python -m script.hassfest .
