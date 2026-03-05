@@ -17,5 +17,5 @@ jobs:
 
       - name: Hassfest validation
         run: |
-          pip install hassfest
+          pip install git+https://github.com/home-assistant/core.git#script/hassfest
           hassfest .
