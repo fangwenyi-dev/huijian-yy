@@ -289,6 +289,7 @@ class WindowControllerStopButton(BaseWindowControllerButton):
             "mdi:pause"
         )
 
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -458,6 +459,7 @@ async def async_setup_entry(
     
     # 存储删除按钮跟踪信息到entry_data，以便在卸载时清理
     entry_data["created_remove_buttons"] = created_remove_buttons
+
 
 async def async_setup_platform(
     hass: HomeAssistant,
