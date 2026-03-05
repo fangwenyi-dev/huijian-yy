@@ -9,13 +9,5 @@
   "dependencies": ["mqtt"],
   "codeowners": ["@fangwenyi-dev"],
   "iot_class": "local_polling",
-  "service_yaml": "services.yaml",
-  "icon": "mdi:window-open-variant",
-  "integration_type": "device",
-  "platforms": ["cover", "binary_sensor", "button", "sensor"],
-  "local_only": false,
-  "brand": {
-    "name": "Huijian",
-    "manufacturer": "Huijian Intelligent Technology"
-  }
+  "integration_type": "device"
 }
