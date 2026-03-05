@@ -10,14 +10,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: HACS validation
+        uses: hacs/action@main
         with:
-          python-version: '3.11'
+          category: integration
 
-      - name: Install dependencies
+      - name: Hassfest validation
         run: |
-          pip install aiogithubapi==21.4.0
-
-      - name: Run hassfest
-        uses: home-assistant/actions/hassfest@master
+          pip install home-assistant==2024.5.1
+          python -m homeassistant.tools.hassfest .
