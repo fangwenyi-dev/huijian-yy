@@ -13,13 +13,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.14'
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           pip install aiogithubapi==21.4.0
 
+      - name: Install hassfest
+        run: pip install hassfest
+
       - name: Hassfest validation
-        run: |
-          pip install git+https://github.com/home-assistant/core.git#script/hassfest
-          hassfest .
+        run: hassfest .
