@@ -1,1 +1,0 @@
-删除 button.py 中 BaseWindowControllerButton 类的 device_info 方法，使子设备控制按钮不依赖设备，始终可用。
