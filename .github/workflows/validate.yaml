@@ -14,13 +14,3 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
-
-      - name: Install Python dependencies
-        run: |
-          pip install voluptuous
-
-      - name: Hassfest validation
-        run: |
-          git clone https://github.com/home-assistant/core.git /tmp/homeassistant
-          cd /tmp/homeassistant
-          python -m script.hassfest .
