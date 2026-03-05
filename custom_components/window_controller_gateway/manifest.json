@@ -1,0 +1,25 @@
+{
+  "domain": "window_controller_gateway",
+  "name": "Huijian Window Controller Gateway",
+  "version": "1.2.5",
+  "config_flow": true,
+  "documentation": "https://github.com/fangwenyi-dev/ha-window-controller-gateway",
+  "issue_tracker": "https://github.com/fangwenyi-dev/ha-window-controller-gateway/issues",
+  "requirements": [],
+  "dependencies": ["mqtt"],
+  "codeowners": ["@fangwenyi-dev"],
+  "iot_class": "local_polling",
+  "service_yaml": "services.yaml",
+  "icon": "mdi:window-open-variant",
+  "integration_type": "device",
+  "platforms": ["cover", "binary_sensor", "button", "sensor"],
+  "local_only": false,
+  "brand": {
+    "name": "Huijian",
+    "manufacturer": "Huijian Intelligent Technology",
+    "images": {
+      "icon": "brand/icon.png",
+      "logo": "brand/logo.png"
+    }
+  }
+}
