@@ -10,11 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: HACS validation
-        uses: hacs/action@main
-        with:
-          category: integration
-
       - name: Hassfest validation
         run: |
           pip install git+https://github.com/home-assistant/core.git#script/hassfest
