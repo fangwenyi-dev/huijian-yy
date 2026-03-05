@@ -1,7 +1,7 @@
 {
   "domain": "window_controller_gateway",
   "name": "Huijian Window Controller Gateway",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "config_flow": true,
   "documentation": "https://github.com/fangwenyi-dev/ha-window-controller-gateway",
   "issue_tracker": "https://github.com/fangwenyi-dev/ha-window-controller-gateway/issues",
@@ -17,9 +17,6 @@
   "brand": {
     "name": "Huijian",
     "manufacturer": "Huijian Intelligent Technology",
-    "images": {
-      "icon": "brand/icon.png",
-      "logo": "brand/logo.png"
-    }
+    "images": {}
   }
 }
