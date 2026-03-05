@@ -19,8 +19,5 @@ jobs:
         run: |
           pip install aiogithubapi==21.4.0
 
-      - name: Install hassfest
-        run: pip install hassfest
-
-      - name: Hassfest validation
-        run: hassfest .
+      - name: Run hassfest
+        uses: home-assistant/actions/hassfest@master
