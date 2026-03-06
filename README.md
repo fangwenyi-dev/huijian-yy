@@ -27,10 +27,36 @@ Home Assistant 自定义集成，用于控制慧尖开窗器网关及设备。
 
 ## 配置方法
 
+### 安装并配置 Mosquitto broker
+
+1. 在 Home Assistant 中进入 "配置" > "插件商店"
+2. 搜索并安装 "Mosquitto broker"
+3. 配置 MQTT 代理：
+   - 代理地址：Home Assistant 主机的 IP 地址
+   - 用户名：admin
+   - 密码：admin
+4. 重启 Home Assistant
+
+### 添加慧尖开窗器网关集成
+
 1. 在 Home Assistant 中进入 "配置" > "设备与服务" > "添加集成"
 2. 搜索 "慧尖开窗器网关"
 3. 输入网关序列号（SN）
 4. 点击 "提交" 完成配置
+
+### 网关后台配置
+
+1. 通过路由器查看网关IP地址，访问慧尖开窗器网关后台
+2. 使用以下凭据登录：
+   - 用户名：admin
+   - 密码：12345678
+3. 在 YGsmartlife 界面中，找到 "mqtt config" 列表
+   - 修改 MQTT IP 地址为 Home Assistant 主机的 IP 地址，如（192.168.1.91，具体根据路由器查询）
+   - 将 "enable" 从 "disable" 改为 "enable"
+   - 将username设置为：admin
+   - 将password设置为：admin
+   - 点击 "save&apply" 保存配置
+4. 完成上述操作后重启网关
 
 ## 设备控制
 
