@@ -741,14 +741,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.setLevel(logging.DEBUG)
             _LOGGER.info("调试日志已启用")
 
-        # 设置状态定期更新
+        # 设置状态定期更新（取消定时设备发现，只保留连接检查）
         async def periodic_update(_now):
-            """定期更新设备状态"""
+            """定期检查连接状态"""
             try:
                 await mqtt_handler.check_connection()
-                # 如果启用了自动发现，定期触发设备发现
-                if auto_discovery:
-                    await mqtt_handler.trigger_discovery()
             except Exception as e:
                 _LOGGER.warning("定期连接检查时出错: %s", e)
 
