@@ -6,6 +6,8 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import intent
 from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
@@ -244,6 +246,104 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         _LOGGER.info(f"拆分actions: {len(actions)} -> {len(split_actions)}")
         return split_actions
 
+    async def _auto_supplement_windows(
+        self, hass: HomeAssistant, actions: list[dict]
+    ) -> list[dict]:
+        """Auto-add ControlWindow for areas that have window buttons but LLM missed them.
+
+        When a TurnDeviceOn/Off covers multiple domain types in an area (e.g.
+        light+switch+climate) but forgets window(button), this method detects
+        window buttons via HA entity registry and auto-supplements a ControlWindow action.
+        """
+        ent_registry = er.async_get(hass)
+        area_reg = ar.async_get(hass)
+
+        area_has_window = {}
+        for entity_entry in ent_registry.entities.values():
+            if entity_entry.domain != "button":
+                continue
+            name = (entity_entry.name or entity_entry.original_name or "").lower()
+            if not any(kw in name for kw in self.WINDOW_KEYWORDS):
+                continue
+            if entity_entry.area_id:
+                area_entry = area_reg.async_get_area(entity_entry.area_id)
+                if area_entry and area_entry.name:
+                    area_has_window[area_entry.name] = True
+
+        if not area_has_window:
+            return actions
+
+        actions_with_many_domains = []
+        for action in actions:
+            intent_name = action.get("name") or action.get("intent", "")
+            if intent_name not in ("TurnDeviceOn", "TurnDeviceOff"):
+                continue
+            params = action.get("parameters") or action.get("params", {})
+            targets = params.get("target", [])
+            if not isinstance(targets, list):
+                targets = [targets]
+            all_domains = set()
+            for t in targets:
+                if not isinstance(t, dict):
+                    continue
+                for d in t.get("devices", []):
+                    if isinstance(d, dict):
+                        all_domains.update(d.get("domains", []))
+            non_button_count = len([d for d in all_domains if d != "button"])
+            if non_button_count >= 2:
+                actions_with_many_domains.append(action)
+
+        if not actions_with_many_domains:
+            return actions
+
+        def _find_area_name(target: dict) -> str | None:
+            if target.get("area"):
+                return target["area"]
+            if target.get("area_id"):
+                entry = area_reg.async_get_area(target["area_id"])
+                if entry:
+                    return entry.name
+            return None
+
+        existing_window_areas = set()
+        for action in actions:
+            if action.get("name") not in ("ControlWindow", "WindowControl"):
+                continue
+            params = action.get("parameters") or action.get("params", {})
+            for t in params.get("target", []):
+                if isinstance(t, dict):
+                    area = _find_area_name(t)
+                    if area:
+                        existing_window_areas.add(area)
+
+        new_actions = list(actions)
+        for action in actions_with_many_domains:
+            intent_name = action.get("name") or action.get("intent", "")
+            params = action.get("parameters") or action.get("params", {})
+            for t in params.get("target", []):
+                if not isinstance(t, dict):
+                    continue
+                area = _find_area_name(t)
+                if not area or area not in area_has_window:
+                    continue
+                if area in existing_window_areas:
+                    continue
+
+                window_action = "open" if intent_name == "TurnDeviceOn" else "close"
+                new_actions.append({
+                    "name": "ControlWindow",
+                    "parameters": {
+                        "target": [{"area": area, "devices": [{"domains": ["button"]}]}],
+                        "action": window_action
+                    }
+                })
+                existing_window_areas.add(area)
+                _LOGGER.info(
+                    f"自动补充: 区域'{area}'缺少窗户控制, 添加ControlWindow action"
+                )
+
+        return new_actions
+
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
         _LOGGER.info(f"HassCreateVoiceScene slots={slots}")
@@ -259,6 +359,11 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
 
         split_actions = self._split_actions_by_device(actions)
         _LOGGER.info(f"HassCreateVoiceScene split_actions={split_actions}")
+
+        supplemented = await self._auto_supplement_windows(intent_obj.hass, split_actions)
+        if len(supplemented) != len(split_actions):
+            _LOGGER.info(f"自动补充后: {len(supplemented)}个action")
+        split_actions = supplemented
 
         store = get_voice_scene_store(intent_obj.hass)
         success, result = await store.create_scene(trigger_phrase, split_actions)
