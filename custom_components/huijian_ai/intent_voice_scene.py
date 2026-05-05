@@ -473,7 +473,6 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
                 slots=params,
                 assistant=intent_obj.assistant,
                 device_id=None,
-                conversation_id=None,
             )
             return response
         except Exception as e:
