@@ -142,12 +142,90 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         "Parameters: trigger_phrase (string), actions (array of intent+params objects)."
     )
 
+    WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗"]
+    WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
+
     @property
     def slot_schema(self) -> dict | None:
         return {
             vol.Required("trigger_phrase"): cv.string,
             vol.Required("actions"): vol.All(cv.ensure_list, [dict]),
         }
+
+    def _is_window_device(self, device: dict) -> bool:
+        """Check if a device is a window device."""
+        name = device.get("name", "") or ""
+        if any(kw in name for kw in self.WINDOW_EXCLUDE_KEYWORDS):
+            return False
+        if any(kw in name for kw in self.WINDOW_KEYWORDS):
+            return True
+        return False
+
+    def _split_actions_by_device(self, actions: list[dict]) -> list[dict]:
+        """Split actions containing mixed devices into separate actions.
+
+        Example: TurnDeviceOn [筒灯, 平推窗] -> TurnDeviceOn [筒灯] + ControlWindow [平推窗]
+        """
+        if not actions:
+            return actions
+
+        split_actions = []
+        for action in actions:
+            intent_name = action.get("name") or action.get("intent", "")
+            params = action.get("parameters") or action.get("params", {})
+            targets = params.get("target", [])
+
+            if not isinstance(targets, list):
+                targets = [targets] if isinstance(targets, dict) else []
+                params["target"] = targets
+
+            normal_targets = []
+            window_targets = []
+
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                devices = target.get("devices", [])
+                if not isinstance(devices, list):
+                    devices = [devices] if isinstance(devices, dict) else []
+                    target["devices"] = devices
+
+                normal_devices = []
+                window_devices = []
+
+                for device in devices:
+                    if not isinstance(device, dict):
+                        continue
+                    if self._is_window_device(device):
+                        window_devices.append(device)
+                    else:
+                        normal_devices.append(device)
+
+                if normal_devices:
+                    normal_targets.append({**target, "devices": normal_devices})
+                if window_devices:
+                    window_targets.append({**target, "devices": window_devices})
+
+            if normal_targets:
+                split_actions.append({
+                    "name": intent_name,
+                    "parameters": {**params, "target": normal_targets}
+                })
+
+            if window_targets:
+                action_mapping = {
+                    "TurnDeviceOn": "ControlWindow",
+                    "TurnDeviceOff": "ControlWindow",
+                }
+                window_intent = action_mapping.get(intent_name, intent_name)
+                window_action = "open" if intent_name == "TurnDeviceOn" else "close"
+                split_actions.append({
+                    "name": window_intent,
+                    "parameters": {"target": window_targets, "action": window_action}
+                })
+
+        _LOGGER.info(f"拆分actions: {len(actions)} -> {len(split_actions)}")
+        return split_actions
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
@@ -162,8 +240,11 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         if not actions:
             return {"success": False, "error": "动作列表不能为空"}
 
+        split_actions = self._split_actions_by_device(actions)
+        _LOGGER.info(f"HassCreateVoiceScene split_actions={split_actions}")
+
         store = get_voice_scene_store(intent_obj.hass)
-        success, result = await store.create_scene(trigger_phrase, actions)
+        success, result = await store.create_scene(trigger_phrase, split_actions)
 
         if success:
             return {
@@ -261,76 +342,22 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
         """Execute an intent action.
 
         This internally calls the appropriate HA services based on intent type.
+        Action has been split at creation time, so no need to separate devices here.
         """
         hass = intent_obj.hass
 
-        WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗"]
-        WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
-        WINDOW_DOMAIN_KEYWORDS = ["cover", "window"]
-
-        targets = params.get("target", [])
-        if not isinstance(targets, list):
-            targets = [targets] if isinstance(targets, dict) else []
-
-        normal_targets = []
-        window_targets = []
-
-        for target in targets:
-            if not isinstance(target, dict):
-                continue
-            devices = target.get("devices", [])
-            if not isinstance(devices, list):
-                continue
-
-            is_window = False
-            window_device = None
-
-            for device in devices:
-                if not isinstance(device, dict):
-                    continue
-                name = device.get("name", "") or ""
-
-                if any(kw in name for kw in WINDOW_EXCLUDE_KEYWORDS):
-                    continue
-
-                if any(kw in name for kw in WINDOW_KEYWORDS):
-                    is_window = True
-                    window_device = device
-                    domains = device.get("domains")
-                    if isinstance(domains, list) and any(d in WINDOW_DOMAIN_KEYWORDS for d in domains):
-                        _LOGGER.info(f"窗户domain标准化: device={name}, domains={domains} -> [\"button\"]")
-                        device["domains"] = ["button"]
-                    break
-
-            if is_window and window_device:
-                window_targets.append(target)
-            else:
-                normal_targets.append(target)
-
-        results = []
-
-        if normal_targets:
-            _LOGGER.info(f"执行普通设备: intent={intent_name}, targets={normal_targets}")
-            if intent_name == "TurnDeviceOn":
-                result = await self._execute_turn_device(hass, intent_obj, {"target": normal_targets}, "turn_on")
-            elif intent_name == "TurnDeviceOff":
-                result = await self._execute_turn_device(hass, intent_obj, {"target": normal_targets}, "turn_off")
-            elif intent_name == "AdjustDeviceAttribute":
-                result = await self._execute_adjust_attribute(hass, intent_obj, {"target": normal_targets, "attribute": params.get("attribute"), "delta": params.get("delta")})
-            elif intent_name == "SetDeviceMode":
-                result = await self._execute_set_mode(hass, intent_obj, {"target": normal_targets, "mode": params.get("mode")})
-            else:
-                result = {"success": False, "error": f"不支持的intent类型: {intent_name}"}
-            results.append(result)
-
-        for window_target in window_targets:
-            _LOGGER.info(f"执行窗户设备: intent={intent_name}, target={window_target}")
-            window_params = {"target": [window_target], "action": "open" if intent_name == "TurnDeviceOn" else "close"}
-            result = await self._execute_control_window(hass, intent_obj, window_params)
-            results.append(result)
-
-        all_success = all(r.get("success", False) for r in results)
-        return {"success": all_success, "results": results}
+        if intent_name in ["ControlWindow", "WindowControl"]:
+            return await self._execute_control_window(hass, intent_obj, params)
+        elif intent_name == "TurnDeviceOn":
+            return await self._execute_turn_device(hass, intent_obj, params, "turn_on")
+        elif intent_name == "TurnDeviceOff":
+            return await self._execute_turn_device(hass, intent_obj, params, "turn_off")
+        elif intent_name == "AdjustDeviceAttribute":
+            return await self._execute_adjust_attribute(hass, intent_obj, params)
+        elif intent_name == "SetDeviceMode":
+            return await self._execute_set_mode(hass, intent_obj, params)
+        else:
+            return {"success": False, "error": f"不支持的intent类型: {intent_name}"}
 
     async def _execute_turn_device(self, hass: HomeAssistant, intent_obj: intent.Intent, params: dict[str, Any], service: str) -> dict[str, Any]:
         """Execute turn on/off device action."""
