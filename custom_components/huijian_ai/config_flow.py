@@ -1061,6 +1061,66 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
 class OptionsFlowHandler(OptionsFlowWithReload):
     """Handle a option flow for esphome."""
 
+    DOMAIN_NAMES = {
+        "light": "灯", "switch": "开关", "climate": "空调",
+        "cover": "窗帘", "fan": "风扇", "media_player": "媒体",
+        "button": "窗户", "lock": "锁", "valve": "阀门",
+    }
+    INTENT_NAMES = {
+        "TurnDeviceOn": "打开", "TurnDeviceOff": "关闭",
+        "ControlWindow": "窗户", "AdjustDeviceAttribute": "调节",
+        "SetDeviceMode": "设模式",
+    }
+
+    @staticmethod
+    def _format_action_summary(action: dict) -> str:
+        """Format a single action into a readable summary string."""
+        intent = action.get("intent") or action.get("name", "")
+        params = action.get("params") or action.get("parameters", {})
+
+        if intent in ("ControlWindow", "WindowControl"):
+            action_type = params.get("action", "")
+            action_label = {"open": "开窗", "close": "关窗", "pause": "暂停窗户", "a": "窗户A"}.get(action_type, f"窗户({action_type})")
+            targets = params.get("target", [])
+            areas = []
+            for t in targets if isinstance(targets, list) else [targets]:
+                if isinstance(t, dict) and t.get("area"):
+                    areas.append(t["area"])
+            prefix = f"{areas[0]}" if areas else ""
+            return f"{prefix}{action_label}"
+
+        if intent in ("TurnDeviceOn", "TurnDeviceOff"):
+            action_label = "打开" if intent == "TurnDeviceOn" else "关闭"
+            targets = params.get("target", [])
+            parts = []
+            for t in targets if isinstance(targets, list) else [targets]:
+                if not isinstance(t, dict):
+                    continue
+                area = t.get("area", "")
+                devices = t.get("devices", [])
+                for d in devices if isinstance(devices, list) else [devices]:
+                    if not isinstance(d, dict):
+                        continue
+                    domains = d.get("domains", [])
+                    for domain in domains if isinstance(domains, list) else [domains]:
+                        name = OptionsFlowHandler.DOMAIN_NAMES.get(domain, domain)
+                        prefix = f"{area}" if area else ""
+                        parts.append(f"{prefix}{name}")
+            if parts:
+                return action_label + "+".join(parts)
+            return action_label + "设备"
+
+        if intent in ("HassCreateVoiceScene",):
+            return "创建场景"
+
+        if intent in ("HassDeleteVoiceScene",):
+            return "删除场景"
+
+        if intent == "HassBroadcast":
+            return "广播"
+
+        return intent
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -1105,8 +1165,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 actions = scene.get("actions", [])
                 created = scene.get("created_at", "")
                 created_short = created[:19] if created else ""
-                action_count = len(actions)
-                lines.append(f"{i}. 「{trigger}」 - {action_count}个动作 ({created_short})")
+                action_summaries = [self._format_action_summary(a) for a in actions]
+                action_text = "、".join(action_summaries)
+                lines.append(f"{i}. 「{trigger}」 - {action_text} ({created_short})")
             scene_desc = "\n".join(lines)
 
         scene_options = {}
