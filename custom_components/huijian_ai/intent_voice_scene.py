@@ -12,8 +12,6 @@ from homeassistant.helpers import intent
 from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
 
-from .intent_helper import HaTargetItem, match_intent_entities
-
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_KEY = "huijian_voice_scenes"
@@ -384,6 +382,7 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
         }
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
+        """Handle voice scene trigger - execute stored actions."""
         slots = self.async_validate_slots(intent_obj.slots)
         _LOGGER.info(f"HassTriggerVoiceScene slots={slots}")
 
@@ -448,359 +447,37 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
             raise
 
     async def _execute_intent(self, intent_obj: intent.Intent, intent_name: str, params: dict[str, Any]) -> dict[str, Any]:
-        """Execute an intent action.
+        """Execute an intent action by delegating to the registered IntentHandler.
 
-        This internally calls the appropriate HA services based on intent type.
-        Action has been split at creation time, so no need to separate devices here.
+        Calls the original IntentHandler via intent.async_handle, eliminating
+        code duplication with intent_turn.py, intent_window_control.py, etc.
         """
-        hass = intent_obj.hass
+        from homeassistant.helpers import intent as ha_intent
+        from .const import DOMAIN
 
-        if intent_name in ["ControlWindow", "WindowControl"]:
-            return await self._execute_control_window(hass, intent_obj, params)
-        elif intent_name == "TurnDeviceOn":
-            return await self._execute_turn_device(hass, intent_obj, params, "turn_on")
-        elif intent_name == "TurnDeviceOff":
-            return await self._execute_turn_device(hass, intent_obj, params, "turn_off")
-        elif intent_name == "AdjustDeviceAttribute":
-            return await self._execute_adjust_attribute(hass, intent_obj, params)
-        elif intent_name == "SetDeviceMode":
-            return await self._execute_set_mode(hass, intent_obj, params)
-        else:
+        if intent_name not in [
+            "TurnDeviceOn", "TurnDeviceOff", "ControlWindow", "WindowControl",
+            "AdjustDeviceAttribute", "SetDeviceMode",
+        ]:
             return {"success": False, "error": f"不支持的intent类型: {intent_name}"}
 
-    async def _execute_turn_device(self, hass: HomeAssistant, intent_obj: intent.Intent, params: dict[str, Any], service: str) -> dict[str, Any]:
-        """Execute turn on/off device action."""
-        targets = params.get("target", [])
-        if not targets:
-            return {"success": False, "error": "No target specified"}
-
-        matched_targets = []
-        for target in targets:
-            if isinstance(target, dict):
-                matched_targets.append(target)
-
-        if not matched_targets:
-            return {"success": False, "error": "No valid targets"}
-
-        error_msg, candidate_entities = await match_intent_entities(intent_obj, matched_targets)
-        if error_msg:
-            return {"success": False, "error": error_msg}
-
-        if not candidate_entities:
-            return {"success": False, "error": "No matching devices found"}
-
-        executed = []
-        for entity_info in candidate_entities:
-            state = entity_info.state
-            _LOGGER.info(f"Executing {service} on {state.entity_id}")
-
-            try:
-                if state.domain == "cover":
-                    if service == "turn_on":
-                        service_name = "open_cover"
-                    else:
-                        service_name = "close_cover"
-                elif state.domain == "lock":
-                    if service == "turn_on":
-                        service_name = "lock"
-                    else:
-                        service_name = "unlock"
-                elif state.domain == "valve":
-                    if service == "turn_on":
-                        service_name = "open_valve"
-                    else:
-                        service_name = "close_valve"
-                else:
-                    service_name = service
-
-                await hass.services.async_call(
-                    state.domain, service_name,
-                    {"entity_id": state.entity_id},
-                    context=intent_obj.context,
-                    blocking=True,
-                )
-                executed.append({"entity_id": state.entity_id, "name": entity_info.name})
-            except Exception as e:
-                _LOGGER.error(f"Failed to execute {service} on {state.entity_id}: {e}")
-                executed.append({"entity_id": state.entity_id, "name": entity_info.name, "error": str(e)})
-
-        return {"success": True, "executed": executed}
-
-    async def _execute_adjust_attribute(self, hass: HomeAssistant, intent_obj: intent.Intent, params: dict[str, Any]) -> dict[str, Any]:
-        """Execute adjust attribute action.
-
-        This replicates the logic from AdjustDeviceAttributeIntent for voice scenes.
-        """
-        from .intent_adjust_attribute import adjustment_functions, AdjustmentContext, AdjustmentTarget, parse_delta, UnsupportAdjustmentError
-        from homeassistant.helpers import entity_registry as er
-
-        targets = params.get("target", [])
-        attribute = params.get("attribute", "")
-        delta_raw = params.get("delta", "")
-
-        if not targets or not attribute or not delta_raw:
-            return {"success": False, "error": "Missing required parameters for AdjustDeviceAttribute"}
-
-        delta = parse_delta(delta_raw)
-        if not delta:
-            return {"success": False, "error": f"Invalid delta value: {delta_raw}"}
-
-        error_msg, candidate_entities = await match_intent_entities(intent_obj, targets)
-        if error_msg:
-            return {"success": False, "error": error_msg}
-
-        if not candidate_entities:
-            return {"success": False, "error": "No matching devices found"}
-
-        results = []
-        for entity_info in candidate_entities:
-            state = entity_info.state
-            domain = state.domain
-
-            try:
-                prepare_adjustment = adjustment_functions.get(domain, {}).get(attribute)
-                if not prepare_adjustment:
-                    return {"success": False, "error": f"Domain {domain} does not support attribute {attribute}"}
-
-                target = AdjustmentTarget()
-                prepare_adjustment(AdjustmentContext(state=state, delta=delta), target)
-                target.service_data["entity_id"] = state.entity_id
-
-                await hass.services.async_call(
-                    domain,
-                    target.service,
-                    service_data=target.service_data,
-                    blocking=True,
-                    context=intent_obj.context,
-                )
-                results.append({"entity_id": state.entity_id, "name": entity_info.name, "success": True})
-            except Exception as e:
-                results.append({"entity_id": state.entity_id, "name": entity_info.name, "success": False, "error": str(e)})
-
-        return {"success": True, "results": results}
-
-    async def _execute_set_mode(self, hass: HomeAssistant, intent_obj: intent.Intent, params: dict[str, Any]) -> dict[str, Any]:
-        """Execute set mode action.
-
-        This replicates the logic from SetDeviceModeIntent for voice scenes.
-        """
-        from .intent_set_mode import handle_map, OperationContext, OperationTarget
-        from homeassistant.helpers import entity_registry as er
-
-        targets = params.get("target", [])
-        mode = params.get("mode", "")
-
-        if not targets or not mode:
-            return {"success": False, "error": "Missing required parameters for SetDeviceMode"}
-
-        error_msg, candidate_entities = await match_intent_entities(intent_obj, targets)
-        if error_msg:
-            return {"success": False, "error": error_msg}
-
-        if not candidate_entities:
-            return {"success": False, "error": "No matching devices found"}
-
-        results = []
-        for entity_info in candidate_entities:
-            state = entity_info.state
-            domain = state.domain
-
-            try:
-                entity_reg = er.async_get(hass)
-                entity_entry = entity_reg.async_get(state.entity_id)
-                if not entity_entry:
-                    return {"success": False, "error": f"Entity {state.entity_id} not found in registry"}
-
-                handle = handle_map.get(domain, {}).get("mode")
-                if not handle:
-                    return {"success": False, "error": f"Domain {domain} does not support mode setting"}
-
-                target = OperationTarget()
-                handle(OperationContext(state=state, entity=entity_entry, mode=mode), target)
-                target.service_data["entity_id"] = state.entity_id
-
-                await hass.services.async_call(
-                    domain,
-                    target.service,
-                    service_data=target.service_data,
-                    blocking=True,
-                    context=intent_obj.context,
-                )
-                results.append({"entity_id": state.entity_id, "name": entity_info.name, "success": True, "mode": mode})
-            except Exception as e:
-                results.append({"entity_id": state.entity_id, "name": entity_info.name, "success": False, "error": str(e)})
-
-        return {"success": True, "results": results}
-
-    async def _execute_control_window(self, hass: HomeAssistant, intent_obj: intent.Intent, params: dict[str, Any]) -> dict[str, Any]:
-        """Execute control window action.
-
-        This replicates the logic from ControlWindowIntent for voice scenes.
-        """
-        from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN, SERVICE_PRESS
-        from homeassistant.components.input_button import DOMAIN as INPUT_BUTTON_DOMAIN
-        from homeassistant.helpers import area_registry as ar, entity_registry as er
-
-        targets = params.get("target", [])
-        action = params.get("action", "")
-
-        if not targets:
-            return {"success": False, "error": "No target specified for ControlWindow"}
-
-        target = targets[0] if targets else {}
-        device_name = None
-        area_name = target.get("area")
-        devices = target.get("devices", [])
-        if devices:
-            device_name = devices[0].get("name")
-
-        WINDOW_NAME_MAPPING = {
-            "平推窗": "平推窗",
-            "pingtui": "平推窗",
-            "平开窗": "平开窗",
-            "推拉窗": "推拉窗",
-            "天窗": "天窗",
-            "飘窗": "飘窗",
-            "推拉门": "推拉门",
-            "内开内倒窗": "内开内倒窗",
-            "窗户": "窗户",
-            "窗": "窗户",
-        }
-
-        WINDOW_ACTION_MAPPING = {
-            "open": ["开启", "开", "open"],
-            "close": ["关闭", "关", "close"],
-            "pause": ["暂停", "停止", "pause", "stop"],
-            "a": ["A", "a"],
-        }
-
-        def normalize_text(text: str) -> str:
-            return text.lower().strip() if text else ""
-
-        def extract_window_name(name: str) -> str | None:
-            if not name:
-                return None
-            name_lower = name.lower()
-            for mapped_name in WINDOW_NAME_MAPPING.values():
-                if mapped_name.lower() in name_lower:
-                    return mapped_name
-            return None
-
-        def find_action_in_text(text: str) -> str | None:
-            text_lower = text.lower()
-            for action_key, keywords in WINDOW_ACTION_MAPPING.items():
-                for keyword in keywords:
-                    if keyword.lower() in text_lower:
-                        return action_key
-            return None
-
-        def is_remove_button(state) -> bool:
-            entity_id = state.entity_id.lower()
-            unique_id = getattr(state, 'unique_id', '') or ''
-            name = getattr(state, 'name', '') or ''
-            REMOVE_KEYWORDS = ["删除", "remove", "shan_chu", "shanchu", "delete"]
-            for kw in REMOVE_KEYWORDS:
-                if kw.lower() in entity_id or kw.lower() in unique_id.lower() or kw.lower() in name.lower():
-                    return True
-            return False
-
-        def find_window_buttons_in_area(area_id: str | None) -> dict[str, str]:
-            """Find all window buttons in a given area, keyed by action type."""
-            buttons = {}
-            for state in hass.states.async_all():
-                if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
-                    continue
-                entry = entity_registry.async_get(state.entity_id)
-                if not entry:
-                    continue
-                if area_id and entry.area_id != area_id:
-                    continue
-                name = getattr(state, 'name', '') or ''
-                name_lower = name.lower()
-                if is_remove_button(state):
-                    continue
-                for action_key_kw, keywords in WINDOW_ACTION_MAPPING.items():
-                    for keyword in keywords:
-                        keyword_lower = keyword.lower()
-                        if keyword_lower in name_lower:
-                            idx = name_lower.find(keyword_lower)
-                            after_idx = idx + len(keyword_lower)
-                            after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
-                            before_char = name_lower[idx - 1] if idx > 0 else ' '
-                            if after_char.strip() == '' and before_char.strip() == '':
-                                if action_key_kw not in buttons:
-                                    buttons[action_key_kw] = state.entity_id
-                                break
-            return buttons
-
-        window_name = extract_window_name(device_name or "")
-        action_key = find_action_in_text(device_name or "")
-
-        if not action_key and action:
-            action_key = find_action_in_text(action)
-
-        entity_registry = er.async_get(hass)
-        target_area_id = None
-        if area_name:
-            area_registry = ar.async_get(hass)
-            area = area_registry.async_get_area_by_name(area_name)
-            if area:
-                target_area_id = area.id
-
-        result_buttons = {}
-        if window_name:
-            result_buttons = find_window_buttons_in_area(None)
-            result_buttons = {k: v for k, v in result_buttons.items() if k == action_key}
-            filtered = {}
-            for state in hass.states.async_all():
-                if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
-                    continue
-                name = getattr(state, 'name', '') or ''
-                name_lower = name.lower()
-                if window_name.lower() not in name_lower:
-                    continue
-                if is_remove_button(state):
-                    continue
-                entry = entity_registry.async_get(state.entity_id)
-                if target_area_id and entry.area_id != target_area_id:
-                    continue
-                for action_key_kw, keywords in WINDOW_ACTION_MAPPING.items():
-                    for keyword in keywords:
-                        keyword_lower = keyword.lower()
-                        if keyword_lower in name_lower:
-                            idx = name_lower.find(keyword_lower)
-                            after_idx = idx + len(keyword_lower)
-                            after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
-                            before_char = name_lower[idx - 1] if idx > 0 else ' '
-                            if after_char.strip() == '' and before_char.strip() == '':
-                                if action_key_kw not in filtered:
-                                    filtered[action_key_kw] = state.entity_id
-                                break
-            result_buttons = filtered
-        else:
-            result_buttons = find_window_buttons_in_area(target_area_id)
-
-        if not action_key:
-            return {"success": False, "error": f"Could not determine action from '{device_name}' or '{action}'"}
-
-        if action_key not in result_buttons and area_name:
-            result_buttons = find_window_buttons_in_area(None)
-
-        if action_key not in result_buttons:
-            return {"success": False, "error": f"Could not find {action_key} button for {window_name}"}
-
-        button_entity_id = result_buttons[action_key]
+        normalized_name = intent_name
+        if intent_name == "WindowControl":
+            normalized_name = "ControlWindow"
 
         try:
-            await hass.services.async_call(
-                BUTTON_DOMAIN,
-                SERVICE_PRESS,
-                {"entity_id": button_entity_id},
-                context=intent_obj.context,
-                blocking=True,
+            response = await ha_intent.async_handle(
+                hass=intent_obj.hass,
+                platform=DOMAIN,
+                intent_type=normalized_name,
+                slots=params,
+                assistant=intent_obj.assistant,
+                device_id=None,
+                conversation_id=None,
             )
-            return {"success": True, "button": button_entity_id, "action": action_key}
+            return response
         except Exception as e:
+            _LOGGER.error(f"Intent execution failed: {intent_name}: {e}")
             return {"success": False, "error": str(e)}
 
 
