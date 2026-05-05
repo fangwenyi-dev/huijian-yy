@@ -466,11 +466,12 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
             normalized_name = "ControlWindow"
 
         try:
+            ha_slots = {k: {"value": v} for k, v in params.items()}
             response = await ha_intent.async_handle(
                 hass=intent_obj.hass,
                 platform=DOMAIN,
                 intent_type=normalized_name,
-                slots=params,
+                slots=ha_slots,
                 assistant=intent_obj.assistant,
                 device_id=None,
             )
