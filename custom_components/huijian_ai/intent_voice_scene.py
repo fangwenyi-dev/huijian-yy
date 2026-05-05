@@ -153,13 +153,30 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         }
 
     def _is_window_device(self, device: dict) -> bool:
-        """Check if a device is a window device."""
+        """Check if a device is a window device by name or domain."""
         name = device.get("name", "") or ""
+        domains = device.get("domains", [])
+
         if any(kw in name for kw in self.WINDOW_EXCLUDE_KEYWORDS):
             return False
         if any(kw in name for kw in self.WINDOW_KEYWORDS):
             return True
+        if isinstance(domains, list) and "button" in domains:
+            return True
         return False
+
+    def _has_window_domains_only(self, devices: list[dict]) -> bool:
+        """Check if all devices in the list have only window-related domains."""
+        for device in devices:
+            domains = device.get("domains", [])
+            if not domains:
+                continue
+            has_non_window_domain = any(
+                d not in ("button",) for d in domains
+            )
+            if has_non_window_domain:
+                return False
+        return True
 
     def _split_actions_by_device(self, actions: list[dict]) -> list[dict]:
         """Split actions containing mixed devices into separate actions.
