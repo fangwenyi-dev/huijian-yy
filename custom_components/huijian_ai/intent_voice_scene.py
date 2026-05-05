@@ -167,19 +167,6 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
             return True
         return False
 
-    def _has_window_domains_only(self, devices: list[dict]) -> bool:
-        """Check if all devices in the list have only window-related domains."""
-        for device in devices:
-            domains = device.get("domains", [])
-            if not domains:
-                continue
-            has_non_window_domain = any(
-                d not in ("button",) for d in domains
-            )
-            if has_non_window_domain:
-                return False
-        return True
-
     def _split_actions_by_device(self, actions: list[dict]) -> list[dict]:
         """Split actions containing mixed devices into separate actions.
 
@@ -717,70 +704,20 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
                     return True
             return False
 
-        window_name = extract_window_name(device_name or "")
-        action_key = find_action_in_text(device_name or "")
-
-        if not action_key and action:
-            action_key = find_action_in_text(action)
-
-        if not window_name:
-            return {"success": False, "error": f"Could not extract window name from '{device_name}'"}
-
-        if not action_key:
-            return {"success": False, "error": f"Could not determine action from '{device_name}' or '{action}'"}
-
-        entity_registry = er.async_get(hass)
-        target_area_id = None
-        if area_name:
-            area_registry = ar.async_get(hass)
-            area = area_registry.async_get_area_by_name(area_name)
-            if area:
-                target_area_id = area.id
-
-        result_buttons = {}
-        for state in hass.states.async_all():
-            if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
-                continue
-
-            name = getattr(state, 'name', '') or ''
-            name_lower = name.lower()
-
-            if window_name.lower() not in name_lower:
-                continue
-
-            if is_remove_button(state):
-                continue
-
-            entry = entity_registry.async_get(state.entity_id)
-
-            if target_area_id and entry.area_id != target_area_id:
-                continue
-
-            for action_key_kw, keywords in WINDOW_ACTION_MAPPING.items():
-                for keyword in keywords:
-                    keyword_lower = keyword.lower()
-                    if keyword_lower in name_lower:
-                        idx = name_lower.find(keyword_lower)
-                        after_idx = idx + len(keyword_lower)
-                        after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
-                        before_char = name_lower[idx - 1] if idx > 0 else ' '
-                        if after_char.strip() == '' and before_char.strip() == '':
-                            if action_key_kw not in result_buttons:
-                                result_buttons[action_key_kw] = state.entity_id
-                            break
-
-        if action_key not in result_buttons and area_name:
+        def find_window_buttons_in_area(area_id: str | None) -> dict[str, str]:
+            """Find all window buttons in a given area, keyed by action type."""
+            buttons = {}
             for state in hass.states.async_all():
                 if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
                     continue
+                entry = entity_registry.async_get(state.entity_id)
+                if not entry:
+                    continue
+                if area_id and entry.area_id != area_id:
+                    continue
                 name = getattr(state, 'name', '') or ''
                 name_lower = name.lower()
-                if window_name.lower() not in name_lower:
-                    continue
                 if is_remove_button(state):
-                    continue
-                entry = entity_registry.async_get(state.entity_id)
-                if entry.area_id:
                     continue
                 for action_key_kw, keywords in WINDOW_ACTION_MAPPING.items():
                     for keyword in keywords:
@@ -791,9 +728,63 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
                             after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
                             before_char = name_lower[idx - 1] if idx > 0 else ' '
                             if after_char.strip() == '' and before_char.strip() == '':
-                                if action_key_kw not in result_buttons:
-                                    result_buttons[action_key_kw] = state.entity_id
+                                if action_key_kw not in buttons:
+                                    buttons[action_key_kw] = state.entity_id
                                 break
+            return buttons
+
+        window_name = extract_window_name(device_name or "")
+        action_key = find_action_in_text(device_name or "")
+
+        if not action_key and action:
+            action_key = find_action_in_text(action)
+
+        entity_registry = er.async_get(hass)
+        target_area_id = None
+        if area_name:
+            area_registry = ar.async_get(hass)
+            area = area_registry.async_get_area_by_name(area_name)
+            if area:
+                target_area_id = area.id
+
+        result_buttons = {}
+        if window_name:
+            result_buttons = find_window_buttons_in_area(None)
+            result_buttons = {k: v for k, v in result_buttons.items() if k == action_key}
+            filtered = {}
+            for state in hass.states.async_all():
+                if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
+                    continue
+                name = getattr(state, 'name', '') or ''
+                name_lower = name.lower()
+                if window_name.lower() not in name_lower:
+                    continue
+                if is_remove_button(state):
+                    continue
+                entry = entity_registry.async_get(state.entity_id)
+                if target_area_id and entry.area_id != target_area_id:
+                    continue
+                for action_key_kw, keywords in WINDOW_ACTION_MAPPING.items():
+                    for keyword in keywords:
+                        keyword_lower = keyword.lower()
+                        if keyword_lower in name_lower:
+                            idx = name_lower.find(keyword_lower)
+                            after_idx = idx + len(keyword_lower)
+                            after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
+                            before_char = name_lower[idx - 1] if idx > 0 else ' '
+                            if after_char.strip() == '' and before_char.strip() == '':
+                                if action_key_kw not in filtered:
+                                    filtered[action_key_kw] = state.entity_id
+                                break
+            result_buttons = filtered
+        else:
+            result_buttons = find_window_buttons_in_area(target_area_id)
+
+        if not action_key:
+            return {"success": False, "error": f"Could not determine action from '{device_name}' or '{action}'"}
+
+        if action_key not in result_buttons and area_name:
+            result_buttons = find_window_buttons_in_area(None)
 
         if action_key not in result_buttons:
             return {"success": False, "error": f"Could not find {action_key} button for {window_name}"}
