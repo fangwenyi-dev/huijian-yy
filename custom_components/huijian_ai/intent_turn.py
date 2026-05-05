@@ -164,9 +164,9 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         After the timeout the task will continue to run in the background.
         """
         try:
-            await asyncio.wait({task}, timeout=self.service_timeout)
-        except TimeoutError:
-            _LOGGER.error("Service call is timeout: %s", task.get_name())
+            done, pending = await asyncio.wait({task}, timeout=self.service_timeout)
+            if pending:
+                _LOGGER.error("Service call is timeout: %s", task.get_name())
         except asyncio.CancelledError:
             # Task calling us was cancelled, so cancel service call task, and wait for
             # it to be cancelled, within reason, before leaving.
