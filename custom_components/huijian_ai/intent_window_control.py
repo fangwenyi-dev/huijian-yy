@@ -15,6 +15,7 @@ from .intent_window_const import (
     extract_window_name,
     find_action_in_text,
     find_window_buttons,
+    find_all_window_buttons_by_action,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +70,28 @@ class ControlWindowIntent(intent.IntentHandler):
         _LOGGER.info(f"Extracted: window_name='{window_name}', action='{action}'")
 
         if not window_name:
+            if area_name and action:
+                all_buttons = find_all_window_buttons_by_action(intent_obj.hass, area_name, action)
+                if all_buttons:
+                    results = []
+                    for button_entity_id in all_buttons:
+                        try:
+                            await intent_obj.hass.services.async_call(
+                                BUTTON_DOMAIN,
+                                SERVICE_PRESS_BUTTON,
+                                {ATTR_ENTITY_ID: button_entity_id},
+                                context=intent_obj.context,
+                                blocking=True,
+                            )
+                            results.append(button_entity_id)
+                            _LOGGER.info(f"Pressed all-window button: {button_entity_id}")
+                        except Exception as err:
+                            _LOGGER.error(f"Failed to press {button_entity_id}: {err}")
+                    return {
+                        "success": True,
+                        "message": f"已{action}所有窗户",
+                        "buttons": results,
+                    }
             return {
                 "success": False,
                 "error": f"Could not extract window name from '{device_name}'"
