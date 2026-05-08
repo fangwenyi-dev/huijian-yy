@@ -32,6 +32,12 @@ WINDOW_ACTION_MAPPING = {
 
 REMOVE_KEYWORDS = ["删除", "remove", "shan_chu", "shanchu", "delete"]
 
+# LLM可能使用的domain别名 → 实际HA domain
+DOMAIN_ALIASES = {
+    "window": "button",
+    "windows": "button",
+}
+
 
 def normalize_text(text: str) -> str:
     return text.lower().strip() if text else ""
@@ -160,3 +166,67 @@ def find_window_buttons_by_area_id(hass, area_id: str | None) -> dict[str, str]:
                             buttons[action_key_kw] = state.entity_id
                         break
     return buttons
+
+
+def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) -> list[str]:
+    """Find ALL window buttons matching an action in the given area.
+
+    Used when user says 'open all windows' without specifying a window type.
+    Returns a list of entity_ids for all matching buttons.
+    """
+    from homeassistant.helpers import entity_registry as er
+    entity_registry = er.async_get(hass)
+
+    target_area_id = None
+    if area_name:
+        from homeassistant.helpers import area_registry as ar
+        area_registry = ar.async_get(hass)
+        area = area_registry.async_get_area_by_name(area_name)
+        if area:
+            target_area_id = area.id
+
+    action_keywords = WINDOW_ACTION_MAPPING.get(action, [])
+    if not action_keywords:
+        return []
+
+    result = []
+    seen_window_types = set()
+
+    for state in hass.states.async_all():
+        if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
+            continue
+        name = getattr(state, 'name', '') or ''
+        name_lower = name.lower()
+        if is_remove_button(state):
+            continue
+        entry = entity_registry.async_get(state.entity_id)
+        if not entry:
+            continue
+        if target_area_id and entry.area_id != target_area_id:
+            continue
+
+        has_window_keyword = False
+        for kw in ["平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门",
+                    "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗", "窗户", "窗"]:
+            if kw.lower() in name_lower:
+                has_window_keyword = True
+                break
+        if not has_window_keyword:
+            continue
+
+        for keyword in action_keywords:
+            keyword_lower = keyword.lower()
+            if keyword_lower in name_lower:
+                idx = name_lower.find(keyword_lower)
+                after_idx = idx + len(keyword_lower)
+                after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
+                before_char = name_lower[idx - 1] if idx > 0 else ' '
+                if after_char.strip() == '' and before_char.strip() == '':
+                    window_type = name_lower.replace(keyword_lower, '').strip()
+                    if window_type not in seen_window_types:
+                        seen_window_types.add(window_type)
+                        result.append(state.entity_id)
+                        _LOGGER.info(f"Found all-window button: {state.entity_id} (name: {name})")
+                    break
+
+    return result
