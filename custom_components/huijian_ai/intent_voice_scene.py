@@ -142,7 +142,7 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         "Parameters: trigger_phrase (string), actions (array of intent+params objects)."
     )
 
-    WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗"]
+    WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗"]
     WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
 
     @property
