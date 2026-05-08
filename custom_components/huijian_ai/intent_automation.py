@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import intent as ha_intent
-from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
 
@@ -105,9 +105,8 @@ class AutomationManager:
 
     async def async_start(self):
         _LOGGER.info("AutomationManager starting...")
-        self._unsub = async_track_state_change_event(
-            self._hass,
-            None,
+        self._unsub = self._hass.bus.async_listen(
+            EVENT_STATE_CHANGED,
             self._async_state_changed,
         )
         _LOGGER.info("AutomationManager started - monitoring all state changes")
