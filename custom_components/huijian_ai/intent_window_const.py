@@ -47,6 +47,11 @@ def extract_window_name(name: str) -> str | None:
     if not name:
         return None
     name_lower = name.lower()
+    # 通用名称（"所有窗户"、"全部窗"等）不匹配具体窗户类型，返回None触发全窗查找
+    generic_names = ["所有窗户", "所有窗", "全部窗户", "全部窗", "每个窗户", "每扇窗户"]
+    if any(gn in name_lower for gn in generic_names):
+        _LOGGER.info(f"Detected generic window name '{name}', will use fallback mode")
+        return None
     for mapped_name in WINDOW_NAME_MAPPING.values():
         if mapped_name.lower() in name_lower:
             return mapped_name
