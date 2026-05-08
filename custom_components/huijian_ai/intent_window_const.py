@@ -118,9 +118,11 @@ def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[s
 
         entry = entity_registry.async_get(entity_id)
 
-        if target_area_id and entry.area_id != target_area_id:
+        if target_area_id and entry.area_id and entry.area_id != target_area_id:
             skip_area_count += 1
             continue
+        if target_area_id and not entry.area_id:
+            _LOGGER.debug(f"Including button without area_id: {entity_id} ({name})")
 
         for action, keywords in WINDOW_ACTION_MAPPING.items():
             for keyword in keywords:
@@ -152,8 +154,10 @@ def find_window_buttons_by_area_id(hass, area_id: str | None) -> dict[str, str]:
         entry = entity_registry.async_get(state.entity_id)
         if not entry:
             continue
-        if area_id and entry.area_id != area_id:
+        if area_id and entry.area_id and entry.area_id != area_id:
             continue
+        if area_id and not entry.area_id:
+            _LOGGER.debug(f"find_window_buttons_by_area_id: including button without area_id: {state.entity_id}")
         name = getattr(state, 'name', '') or ''
         name_lower = name.lower()
         if is_remove_button(state):
@@ -207,8 +211,10 @@ def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) 
         entry = entity_registry.async_get(state.entity_id)
         if not entry:
             continue
-        if target_area_id and entry.area_id != target_area_id:
+        if target_area_id and entry.area_id and entry.area_id != target_area_id:
             continue
+        if target_area_id and not entry.area_id:
+            _LOGGER.debug(f"Including button without area_id: {state.entity_id} ({name})")
 
         has_window_keyword = False
         for kw in ["平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门",
