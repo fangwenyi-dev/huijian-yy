@@ -14,7 +14,8 @@ from .intent_voice_scene import (HassCreateVoiceSceneIntent,
 from .intent_window_control import ControlWindowIntent
 from .intent_automation import (HassCreateAutomationIntent,
                                 HassDeleteAutomationIntent,
-                                HassListAutomationsIntent)
+                                HassListAutomationsIntent,
+                                HassUpdateAutomationIntent)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,4 +36,5 @@ async def async_setup_intents(hass: HomeAssistant):
     intent.async_register(hass, HassCreateAutomationIntent())
     intent.async_register(hass, HassDeleteAutomationIntent())
     intent.async_register(hass, HassListAutomationsIntent())
+    intent.async_register(hass, HassUpdateAutomationIntent())
     _LOGGER.info("Register huijian-ai intents end")

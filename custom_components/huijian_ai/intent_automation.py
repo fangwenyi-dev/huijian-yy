@@ -22,6 +22,82 @@ DEBOUNCE_MINUTES = 5
 
 WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]
 WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
+WINDOW_DOMAINS = {"button", "window", "windows"}
+
+
+def _is_window_device(device: dict) -> bool:
+    name = device.get("name", "") or ""
+    domains = device.get("domains", [])
+    if any(kw in name for kw in WINDOW_EXCLUDE_KEYWORDS):
+        return False
+    if any(kw in name for kw in WINDOW_KEYWORDS):
+        return True
+    if isinstance(domains, list) and any(d in WINDOW_DOMAINS for d in domains):
+        return True
+    return False
+
+
+def _split_actions_by_device(actions: list[dict]) -> list[dict]:
+    if not actions:
+        return actions
+
+    split_actions = []
+    for action in actions:
+        intent_name = action.get("name") or action.get("intent", "")
+        params = action.get("parameters") or action.get("params", {})
+        targets = params.get("target", [])
+
+        if not isinstance(targets, list):
+            targets = [targets] if isinstance(targets, dict) else []
+            params["target"] = targets
+
+        normal_targets = []
+        window_targets = []
+
+        for target in targets:
+            if not isinstance(target, dict):
+                continue
+            devices = target.get("devices", [])
+            if not isinstance(devices, list):
+                devices = [devices] if isinstance(devices, dict) else []
+                target["devices"] = devices
+
+            normal_devices = []
+            window_devices = []
+
+            for device in devices:
+                if not isinstance(device, dict):
+                    continue
+                if _is_window_device(device):
+                    window_devices.append(device)
+                else:
+                    normal_devices.append(device)
+
+            if normal_devices:
+                normal_targets.append({**target, "devices": normal_devices})
+            if window_devices:
+                window_targets.append({**target, "devices": window_devices})
+
+        if normal_targets:
+            split_actions.append({
+                "name": intent_name,
+                "parameters": {**params, "target": normal_targets}
+            })
+
+        if window_targets:
+            action_mapping = {
+                "TurnDeviceOn": "ControlWindow",
+                "TurnDeviceOff": "ControlWindow",
+            }
+            window_intent = action_mapping.get(intent_name, intent_name)
+            window_action = "open" if intent_name == "TurnDeviceOn" else "close"
+            split_actions.append({
+                "name": window_intent,
+                "parameters": {"target": window_targets, "action": window_action}
+            })
+
+    _LOGGER.info(f"Split actions: {len(actions)} -> {len(split_actions)}")
+    return split_actions
 
 class AutomationStore:
     """Manage automation storage using HA's storage mechanism."""
@@ -52,6 +128,10 @@ class AutomationStore:
         data = await self._load_data()
         return list(data.get("automations", {}).values())
 
+    async def get_automation(self, automation_id: str) -> dict[str, Any] | None:
+        data = await self._load_data()
+        return data.get("automations", {}).get(automation_id)
+
     async def create_automation(self, trigger: dict, actions: list[dict]) -> tuple[bool, str]:
         async with self._lock:
             data = await self._load_data()
@@ -69,6 +149,23 @@ class AutomationStore:
             await self._save_data(data)
             _LOGGER.info(f"Created automation: {automation_id}")
             return True, automation_id
+
+    async def update_automation(self, automation_id: str, trigger: dict | None, actions: list[dict] | None) -> tuple[bool, str]:
+        async with self._lock:
+            data = await self._load_data()
+            if automation_id not in data.get("automations", {}):
+                return False, f"未找到自动化ID'{automation_id}'"
+
+            automation = data["automations"][automation_id]
+            if trigger is not None:
+                automation["trigger"] = trigger
+            if actions is not None:
+                automation["actions"] = actions
+            automation["updated_at"] = datetime.now().isoformat() + "Z"
+
+            await self._save_data(data)
+            _LOGGER.info(f"Updated automation: {automation_id}")
+            return True, f"已更新自动化：{automation_id}"
 
     async def delete_automation(self, automation_id: str) -> tuple[bool, str]:
         async with self._lock:
@@ -129,48 +226,55 @@ class AutomationManager:
         self._hass.async_create_task(self._async_check_automations(entity_id, new_state.state))
 
     async def _async_check_automations(self, entity_id: str, state_str: str):
-        automations = await self._store.get_all_automations()
-        if not automations:
-            return
+        try:
+            automations = await self._store.get_all_automations()
+            if not automations:
+                return
 
-        for automation in automations:
-            trigger = automation.get("trigger", {})
-            trigger_entity = (trigger.get("entity_id", "") or "").strip()
-            if not trigger_entity:
-                continue
+            for automation in automations:
+                try:
+                    trigger = automation.get("trigger", {})
+                    trigger_entity = (trigger.get("entity_id", "") or "").strip()
+                    if not trigger_entity:
+                        continue
 
-            if trigger_entity != entity_id:
-                continue
+                    if trigger_entity != entity_id:
+                        continue
 
-            try:
-                value = float(state_str)
-            except (ValueError, TypeError):
-                continue
+                    try:
+                        value = float(state_str)
+                    except (ValueError, TypeError):
+                        continue
 
-            above = trigger.get("above")
-            below = trigger.get("below")
+                    above = trigger.get("above")
+                    below = trigger.get("below")
 
-            condition_met = True
-            if above is not None:
-                if value <= float(above):
-                    condition_met = False
-            if below is not None:
-                if value >= float(below):
-                    condition_met = False
+                    condition_met = True
+                    if above is not None:
+                        if value <= float(above):
+                            condition_met = False
+                    if below is not None:
+                        if value >= float(below):
+                            condition_met = False
 
-            if not condition_met:
-                continue
+                    if not condition_met:
+                        _LOGGER.debug(f"Condition not met for {automation.get('automation_id')} ({entity_id}={value})")
+                        continue
 
-            automation_id = automation.get("automation_id", "")
-            now = datetime.now().timestamp()
-            last = self._triggered_cache.get(automation_id, 0)
-            if now - last < self._debounce_seconds:
-                _LOGGER.debug(f"Automation {automation_id} debounced ({entity_id}={value})")
-                continue
+                    automation_id = automation.get("automation_id", "")
+                    now = datetime.now().timestamp()
+                    last = self._triggered_cache.get(automation_id, 0)
+                    if now - last < self._debounce_seconds:
+                        _LOGGER.debug(f"Automation {automation_id} debounced ({entity_id}={value})")
+                        continue
 
-            self._triggered_cache[automation_id] = now
-            _LOGGER.info(f"Automation triggered: {automation_id} ({entity_id}={value})")
-            await self._execute_actions(automation.get("actions", []))
+                    self._triggered_cache[automation_id] = now
+                    _LOGGER.info(f"Automation triggered: {automation_id} ({entity_id}={value})")
+                    await self._execute_actions(automation.get("actions", []))
+                except Exception as e:
+                    _LOGGER.error(f"Error checking automation {automation.get('automation_id', 'unknown')}: {e}")
+        except Exception as e:
+            _LOGGER.error(f"Error in _async_check_automations: {e}")
 
     @callback
     def _extract_entity_ids(self, trigger_text: str) -> list[str]:
@@ -247,80 +351,6 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
             vol.Required("actions"): vol.All(cv.ensure_list, [dict]),
         }
 
-    def _is_window_device(self, device: dict) -> bool:
-        name = device.get("name", "") or ""
-        domains = device.get("domains", [])
-        if any(kw in name for kw in WINDOW_EXCLUDE_KEYWORDS):
-            return False
-        if any(kw in name for kw in WINDOW_KEYWORDS):
-            return True
-        window_domains = {"button", "window", "windows"}
-        if isinstance(domains, list) and any(d in window_domains for d in domains):
-            return True
-        return False
-
-    def _split_actions_by_device(self, actions: list[dict]) -> list[dict]:
-        if not actions:
-            return actions
-
-        split_actions = []
-        for action in actions:
-            intent_name = action.get("name") or action.get("intent", "")
-            params = action.get("parameters") or action.get("params", {})
-            targets = params.get("target", [])
-
-            if not isinstance(targets, list):
-                targets = [targets] if isinstance(targets, dict) else []
-                params["target"] = targets
-
-            normal_targets = []
-            window_targets = []
-
-            for target in targets:
-                if not isinstance(target, dict):
-                    continue
-                devices = target.get("devices", [])
-                if not isinstance(devices, list):
-                    devices = [devices] if isinstance(devices, dict) else []
-                    target["devices"] = devices
-
-                normal_devices = []
-                window_devices = []
-
-                for device in devices:
-                    if not isinstance(device, dict):
-                        continue
-                    if self._is_window_device(device):
-                        window_devices.append(device)
-                    else:
-                        normal_devices.append(device)
-
-                if normal_devices:
-                    normal_targets.append({**target, "devices": normal_devices})
-                if window_devices:
-                    window_targets.append({**target, "devices": window_devices})
-
-            if normal_targets:
-                split_actions.append({
-                    "name": intent_name,
-                    "parameters": {**params, "target": normal_targets}
-                })
-
-            if window_targets:
-                action_mapping = {
-                    "TurnDeviceOn": "ControlWindow",
-                    "TurnDeviceOff": "ControlWindow",
-                }
-                window_intent = action_mapping.get(intent_name, intent_name)
-                window_action = "open" if intent_name == "TurnDeviceOn" else "close"
-                split_actions.append({
-                    "name": window_intent,
-                    "parameters": {"target": window_targets, "action": window_action}
-                })
-
-        _LOGGER.info(f"Automation split actions: {len(actions)} -> {len(split_actions)}")
-        return split_actions
-
     async def async_handle(self, intent_obj: ha_intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
         _LOGGER.info(f"HassCreateAutomation slots={slots}")
@@ -335,7 +365,7 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
         if not actions:
             return {"success": False, "error": "actions不能为空"}
 
-        split_actions = self._split_actions_by_device(actions)
+        split_actions = _split_actions_by_device(actions)
         _LOGGER.info(f"HassCreateAutomation split_actions={split_actions}")
 
         store = get_automation_store(intent_obj.hass)
@@ -417,4 +447,65 @@ class HassListAutomationsIntent(ha_intent.IntentHandler):
         return {
             "success": True,
             "automations": automations,
+        }
+
+
+class HassUpdateAutomationIntent(ha_intent.IntentHandler):
+    intent_type = "HassUpdateAutomation"
+    description = (
+        "Updates an existing sensor-triggered automation's trigger or actions. "
+        "Use when user wants to modify a previously created automation. "
+        "Parameters: automation_id (string required), "
+        "trigger (optional object with entity_id, above/below), "
+        "actions (optional array of intent action objects). "
+        "Example: automation_id='automation_20260508185741', "
+        "trigger={entity_id:'sensor.office_temperature', above:30}"
+    )
+
+    @property
+    def slot_schema(self) -> dict | None:
+        return {
+            vol.Required("automation_id"): cv.string,
+            vol.Optional("trigger"): {
+                vol.Optional("entity_id"): cv.string,
+                vol.Optional("above"): vol.Coerce(float),
+                vol.Optional("below"): vol.Coerce(float),
+            },
+            vol.Optional("actions"): vol.All(cv.ensure_list, [dict]),
+        }
+
+    async def async_handle(self, intent_obj: ha_intent.Intent) -> JsonObjectType:
+        slots = self.async_validate_slots(intent_obj.slots)
+        _LOGGER.info(f"HassUpdateAutomation slots={slots}")
+
+        automation_id = slots.get("automation_id", {}).get("value", "")
+        trigger_raw = slots.get("trigger", {}).get("value")
+        actions_raw = slots.get("actions", {}).get("value")
+
+        if not automation_id:
+            return {"success": False, "error": "automation_id不能为空"}
+        if not trigger_raw and not actions_raw:
+            return {"success": False, "error": "请提供要修改的trigger或actions"}
+
+        store = get_automation_store(intent_obj.hass)
+        existing = await store.get_automation(automation_id)
+        if not existing:
+            return {"success": False, "error": f"未找到自动化ID'{automation_id}'"}
+
+        trigger = None
+        if trigger_raw:
+            if not trigger_raw.get("entity_id"):
+                return {"success": False, "error": "trigger.entity_id不能为空"}
+            trigger = trigger_raw
+
+        actions = None
+        if actions_raw:
+            actions = _split_actions_by_device(actions_raw)
+
+        success, message = await store.update_automation(automation_id, trigger, actions)
+
+        return {
+            "success": success,
+            "message": message if success else None,
+            "error": message if not success else None,
         }

@@ -1124,11 +1124,14 @@ class OptionsFlowHandler(OptionsFlowWithReload):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage voice scenes inline - support batch delete."""
+        """Manage voice scenes and automations inline - support batch delete."""
         from .intent_voice_scene import get_voice_scene_store
+        from .intent_automation import get_automation_store
 
-        store = get_voice_scene_store(self.hass)
-        scenes = await store.get_all_scenes()
+        voice_store = get_voice_scene_store(self.hass)
+        auto_store = get_automation_store(self.hass)
+        scenes = await voice_store.get_all_scenes()
+        automations = await auto_store.get_all_automations()
 
         if user_input is not None:
             to_delete = user_input.get("to_delete", [])
@@ -1138,7 +1141,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 deleted = []
                 failed = []
                 for scene_id in to_delete:
-                    success, msg = await store.delete_scene(scene_id=scene_id)
+                    success, msg = await voice_store.delete_scene(scene_id=scene_id)
                     if success:
                         deleted.append(scene_id)
                     else:
@@ -1150,38 +1153,89 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                         last_step=False,
                     )
 
+            to_delete_auto = user_input.get("to_delete_auto", [])
+            if isinstance(to_delete_auto, str):
+                to_delete_auto = [to_delete_auto]
+            if to_delete_auto:
+                deleted_auto = []
+                failed_auto = []
+                for auto_id in to_delete_auto:
+                    success, msg = await auto_store.delete_automation(auto_id)
+                    if success:
+                        deleted_auto.append(auto_id)
+                    else:
+                        failed_auto.append(f"{auto_id}: {msg}")
+                if deleted_auto:
+                    return self.async_show_form(
+                        step_id="voice_scene_delete_result",
+                        description_placeholders={"result_msg": f"已删除 {len(deleted_auto)} 个自动化"},
+                        last_step=False,
+                    )
+
             to_options = user_input.get("to_options", False)
             if to_options:
                 return await self.async_step_options()
 
             return await self.async_step_init()
 
-        if not scenes:
-            scene_desc = "暂无语音场景。\n\n通过语音创建：\n「当我说晚安的时候，帮我关灯」"
-        else:
-            lines = []
-            for i, scene in enumerate(scenes, 1):
-                trigger = scene.get("trigger_phrase", "未命名")
-                actions = scene.get("actions", [])
-                created = scene.get("created_at", "")
-                created_short = created[:19] if created else ""
-                action_summaries = [self._format_action_summary(a) for a in actions]
-                action_text = "、".join(action_summaries)
-                lines.append(f"{i}. 「{trigger}」 - {action_text} ({created_short})")
-            scene_desc = "\n".join(lines)
+        scene_lines = []
+        for i, scene in enumerate(scenes, 1):
+            trigger = scene.get("trigger_phrase", "未命名")
+            actions = scene.get("actions", [])
+            created = scene.get("created_at", "")
+            created_short = created[:19] if created else ""
+            action_summaries = [self._format_action_summary(a) for a in actions]
+            action_text = "、".join(action_summaries)
+            scene_lines.append(f"{i}. 「{trigger}」 - {action_text} ({created_short})")
+        scene_desc = "\n".join(scene_lines) if scene_lines else "暂无语音场景"
+
+        auto_lines = []
+        for i, auto in enumerate(automations, 1):
+            trigger = auto.get("trigger", {})
+            entity_id = trigger.get("entity_id", "未知传感器")
+            above = trigger.get("above")
+            below = trigger.get("below")
+            condition = ""
+            if above is not None:
+                condition += f"> {above}"
+            if below is not None:
+                condition += f" < {below}" if condition else f"< {below}"
+            actions = auto.get("actions", [])
+            action_summaries = []
+            for a in actions:
+                intent_name = a.get("name") or a.get("intent", "Unknown")
+                action_summaries.append(intent_name)
+            auto_lines.append(f"{i}. {entity_id} ({condition}) -> {', '.join(action_summaries)}")
+        auto_desc = "\n".join(auto_lines) if auto_lines else "暂无传感器自动化"
 
         scene_options = {}
         for scene in scenes:
             sid = scene.get("scene_id", "")
             trigger = scene.get("trigger_phrase", "未知")
-            scene_options[sid] = f"删除「{trigger}」"
+            scene_options[sid] = f"删除语音场景「{trigger}」"
+
+        auto_options = {}
+        for auto in automations:
+            aid = auto.get("automation_id", "")
+            trigger = auto.get("trigger", {}).get("entity_id", "未知")
+            auto_options[aid] = f"删除自动化「{trigger}」"
 
         data_schema = vol.Schema({})
         if scene_options:
-            data_schema = vol.Schema({
+            data_schema = data_schema.extend({
                 vol.Optional("to_delete", default=[]): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[{"value": k, "label": v} for k, v in scene_options.items()],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        multiple=True,
+                    ),
+                ),
+            })
+        if auto_options:
+            data_schema = data_schema.extend({
+                vol.Optional("to_delete_auto", default=[]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[{"value": k, "label": v} for k, v in auto_options.items()],
                         mode=selector.SelectSelectorMode.DROPDOWN,
                         multiple=True,
                     ),
@@ -1191,7 +1245,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         return self.async_show_form(
             step_id="init",
             data_schema=data_schema,
-            description_placeholders={"scene_list": scene_desc},
+            description_placeholders={"scene_list": scene_desc, "auto_list": auto_desc},
             last_step=False,
         )
 
