@@ -137,9 +137,13 @@ def get_voice_scene_store(hass: HomeAssistant) -> VoiceSceneStore:
 class HassCreateVoiceSceneIntent(intent.IntentHandler):
     intent_type = "HassCreateVoiceScene"
     description = (
-        "Creates a voice scene that stores trigger phrase and actions. "
-        "Use when user says something like '当我说xxx的时候，帮我执行yyy'. "
-        "Parameters: trigger_phrase (string), actions (array of intent+params objects)."
+        "Creates a voice-triggered scene that stores trigger phrase and actions. "
+        "Use ONLY when user says something like '当我说xxx的时候，帮我执行yyy', "
+        "'你听到我说xxx就yyy', '如果我说xxx就开机'. "
+        "DO NOT use for sensor/condition-based triggers (temperature, humidity, etc.) - "
+        "use HassCreateAutomation for those. "
+        "Parameters: trigger_phrase (a spoken phrase that will trigger the scene), "
+        "actions (array of intent+params objects)."
     )
 
     WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]

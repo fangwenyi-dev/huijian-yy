@@ -32,6 +32,7 @@ from .huijian import LOGGER, Dict, get_entry_data, mcp_transport
 from .huijian.http import async_setup_https
 from .api import async_setup_api
 from .intent import async_setup_intents
+from .intent_automation import get_automation_manager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +51,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await async_setup_https(hass)
     await async_setup_api(hass)
     await async_setup_intents(hass)
+
+    manager = get_automation_manager(hass)
+    await manager.async_start()
+
     return True
 
 
