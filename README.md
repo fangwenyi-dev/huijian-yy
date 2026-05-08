@@ -61,10 +61,18 @@
 
 | 意图名称 | 说明 | 示例语音 |
 |---------|------|---------|
-| `HassCreateVoiceScene` | 创建语音场景 | "当我说'晚安'的时候，帮我关灯并锁门" |
+| `HassCreateVoiceScene` | 创建语音场景（语音触发） | "当我说'晚安'的时候，帮我关灯并锁门" |
 | `HassTriggerVoiceScene` | 触发语音场景 | "晚安" |
 | `HassDeleteVoiceScene` | 删除语音场景 | "删除晚安场景" |
 | `HassListVoiceScenes` | 列出所有语音场景 | "我有哪些语音场景？" |
+
+### 传感器自动化
+
+| 意图名称 | 说明 | 示例语音 |
+|---------|------|---------|
+| `HassCreateAutomation` | 创建传感器条件自动化 | "当温度大于29度就打开卧室窗户" |
+| `HassDeleteAutomation` | 删除自动化 | "删除自动化" |
+| `HassListAutomations` | 列出所有自动化 | "有哪些自动化？" |
 
 ### 其他工具
 

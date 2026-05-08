@@ -12,10 +12,6 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
 
 from .const import DOMAIN
-from .intent_voice_scene import (
-    WINDOW_KEYWORDS as VOICE_WINDOW_KEYWORDS,
-    WINDOW_EXCLUDE_KEYWORDS as VOICE_WINDOW_EXCLUDE_KEYWORDS,
-)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,8 +20,8 @@ STORAGE_VERSION = 1
 
 DEBOUNCE_MINUTES = 5
 
-WINDOW_KEYWORDS = VOICE_WINDOW_KEYWORDS
-WINDOW_EXCLUDE_KEYWORDS = VOICE_WINDOW_EXCLUDE_KEYWORDS
+WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]
+WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
 
 class AutomationStore:
     """Manage automation storage using HA's storage mechanism."""
