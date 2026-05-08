@@ -17,6 +17,8 @@ WINDOW_NAME_MAPPING = {
     "推拉门": "推拉门",
     "内开内倒窗": "内开内倒窗",
     "单内倒窗": "单内倒窗",
+    "外装平开窗": "外装平开窗",
+    "智能窗": "智能窗",
     "窗户": "窗户",
     "窗": "窗户",
 }
@@ -25,7 +27,7 @@ WINDOW_ACTION_MAPPING = {
     "open": ["开启", "开", "open"],
     "close": ["关闭", "关", "close"],
     "pause": ["暂停", "停止", "pause", "stop"],
-    "a": ["A", "a"],
+    "a": ["A", "a", "内倒"],
 }
 
 REMOVE_KEYWORDS = ["删除", "remove", "shan_chu", "shanchu", "delete"]
