@@ -107,6 +107,7 @@ class AutomationManager:
         _LOGGER.info("AutomationManager starting...")
         self._unsub = async_track_state_change_event(
             self._hass,
+            None,
             self._async_state_changed,
         )
         _LOGGER.info("AutomationManager started - monitoring all state changes")
