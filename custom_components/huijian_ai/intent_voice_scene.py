@@ -161,7 +161,9 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
             return False
         if any(kw in name for kw in self.WINDOW_KEYWORDS):
             return True
-        if isinstance(domains, list) and "button" in domains:
+
+        window_domains = {"button", "window", "windows"}
+        if isinstance(domains, list) and any(d in window_domains for d in domains):
             return True
         return False
 
