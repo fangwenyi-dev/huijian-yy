@@ -303,7 +303,7 @@ class AutomationManager:
                 normalized_name = "ControlWindow"
 
             try:
-                ha_slots = {k: {"value": v} for k, v in params.items()}
+                ha_slots = dict(params)
                 response = await ha_intent.async_handle(
                     hass=self._hass,
                     platform=DOMAIN,
