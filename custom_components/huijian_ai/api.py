@@ -151,128 +151,72 @@ class VoiceScenesManageView(HomeAssistantView):
     name = "huijian-ai:voice-scenes:manage"
 
     async def get(self, request: web.Request):
-        html_content = """<!DOCTYPE html>
+        hass = request.app[KEY_HASS]
+        store = get_voice_scene_store(hass)
+        scenes = await store.get_all_scenes()
+
+        scene_cards_html = ""
+        for scene in scenes:
+            scene_id = html_mod.escape(str(scene.get("scene_id", "")))
+            trigger = html_mod.escape(str(scene.get("trigger_phrase", "")))
+            created = scene.get("created_at", "")
+            created_display = ""
+            if created:
+                try:
+                    dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    created_display = dt.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    created_display = str(created)
+            actions_raw = scene.get("actions", [])
+            action_summaries = [_action_to_text(a) for a in actions_raw]
+            action_count = len(action_summaries)
+            actions_html = ""
+            for s in action_summaries:
+                actions_html += f'<div class="action-item">- {html_mod.escape(s)}</div>'
+
+            scene_cards_html += f"""
+<div class="scene-card" id="scene-{scene_id}">
+    <div class="scene-header">
+        <span class="scene-trigger">"{trigger}"</span>
+        <button class="delete-btn" onclick="deleteScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">删除</button>
+    </div>
+    <div class="scene-info">创建时间: {created_display}</div>
+    <div class="scene-actions">
+        <div class="scene-actions-title">执行动作 ({action_count}个):</div>
+        {actions_html}
+    </div>
+</div>"""
+
+        if not scene_cards_html:
+            content_html = '<div class="empty-state">暂无语音场景<br><br>通过语音创建，如：<br>"当我说晚安的时候，帮我关灯"</div>'
+        else:
+            content_html = scene_cards_html
+
+        html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>语音场景管理</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #f5f5f5;
-            padding: 20px;
-            color: #333;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        h1 {
-            font-size: 24px;
-            margin-bottom: 20px;
-            color: #03a9f4;
-        }
-        .scene-card {
-            background: white;
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-        }
-        .scene-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-        .scene-trigger {
-            font-size: 18px;
-            font-weight: 600;
-            color: #1976d2;
-        }
-        .delete-btn {
-            background: #f44336;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        .delete-btn:hover {
-            background: #d32f2f;
-        }
-        .delete-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        .scene-info {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 8px;
-        }
-        .scene-actions {
-            background: #f5f5f5;
-            border-radius: 4px;
-            padding: 8px 12px;
-            font-size: 13px;
-        }
-        .scene-actions-title {
-            font-weight: 600;
-            margin-bottom: 4px;
-            color: #555;
-        }
-        .action-item {
-            padding: 2px 0;
-            color: #777;
-        }
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #999;
-        }
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-        .refresh-btn {
-            background: #4caf50;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-bottom: 16px;
-        }
-        .refresh-btn:hover {
-            background: #388e3c;
-        }
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #333;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 4px;
-            display: none;
-            z-index: 1000;
-        }
-        .toast.success {
-            background: #4caf50;
-        }
-        .toast.error {
-            background: #f44336;
-        }
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; padding: 20px; color: #333; }}
+        .container {{ max-width: 800px; margin: 0 auto; }}
+        h1 {{ font-size: 24px; margin-bottom: 20px; color: #03a9f4; }}
+        .scene-card {{ background: white; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }}
+        .scene-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+        .scene-trigger {{ font-size: 18px; font-weight: 600; color: #1976d2; }}
+        .delete-btn {{ background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }}
+        .delete-btn:hover {{ background: #d32f2f; }}
+        .delete-btn:disabled {{ background: #ccc; cursor: not-allowed; }}
+        .scene-info {{ font-size: 14px; color: #666; margin-bottom: 8px; }}
+        .scene-actions {{ background: #f5f5f5; border-radius: 4px; padding: 8px 12px; font-size: 13px; }}
+        .scene-actions-title {{ font-weight: 600; margin-bottom: 4px; color: #555; }}
+        .action-item {{ padding: 2px 0; color: #777; }}
+        .empty-state {{ text-align: center; padding: 40px; color: #999; }}
+        .toast {{ position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 12px 24px; border-radius: 4px; display: none; z-index: 1000; }}
+        .toast.success {{ background: #4caf50; }}
+        .toast.error {{ background: #f44336; }}
     </style>
 </head>
 <body>
@@ -281,112 +225,51 @@ class VoiceScenesManageView(HomeAssistantView):
         <div class="nav-buttons" style="margin-bottom:12px">
             <a href="/api/huijian-ai/manage-page" style="display:inline-block;background:#03a9f4;color:white;text-decoration:none;padding:8px 16px;border-radius:4px;font-size:14px">智能场景总览</a>
         </div>
-        <button class="refresh-btn" onclick="loadScenes()">刷新列表</button>
-        <div id="content">
-            <div class="loading">加载中...</div>
-        </div>
+        <div id="content">{content_html}</div>
     </div>
     <div class="toast" id="toast"></div>
 
     <script>
         const API_BASE = '/api/huijian-ai/voice-scenes';
 
-        async function loadScenes() {
-            const content = document.getElementById('content');
-            content.innerHTML = '<div class="loading">加载中...</div>';
-
-            try {
-                const response = await fetch(API_BASE);
-                if (response.status === 401) {
-                    content.innerHTML = '<div class="unauth-box"><div class="icon">🔒</div><h2>请先登录 Home Assistant</h2><p>访问此页面需要登录您的 HA 账号</p><a class="login-btn" href="/auth/login?redirect=/huijian-ai/voice-scenes/manage">前往登录</a></div>';
-                    return;
-                }
-                const data = await response.json();
-
-                if (!data.success) {
-                    throw new Error(data.error || '加载失败');
-                }
-
-                const scenes = data.scenes || [];
-
-                if (scenes.length === 0) {
-                    content.innerHTML = '<div class="empty-state">暂无语音场景<br><br>通过语音创建，如：<br>"当我说晚安的时候，帮我关灯"</div>';
-                    return;
-                }
-
-                content.innerHTML = scenes.map(scene => `
-                    <div class="scene-card" id="scene-${scene.scene_id}">
-                        <div class="scene-header">
-                            <span class="scene-trigger">"${escapeHtml(scene.trigger_phrase)}"</span>
-                            <button class="delete-btn" onclick="deleteScene('${scene.scene_id}', '${escapeHtml(scene.trigger_phrase)}')">删除</button>
-                        </div>
-                        <div class="scene-info">
-                            创建时间: ${scene.created_at ? new Date(scene.created_at).toLocaleString('zh-CN') : '未知'}
-                        </div>
-                        <div class="scene-actions">
-                            <div class="scene-actions-title">执行动作 (${scene.action_count}个):</div>
-                            ${(scene.action_summaries || []).map(a => `<div class="action-item">- ${escapeHtml(a)}</div>`).join('')}
-                        </div>
-                    </div>
-                `).join('');
-
-            } catch (error) {
-                content.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(error.message) + '</div>';
-            }
-        }
-
-        async function deleteScene(sceneId, triggerPhrase) {
-            if (!confirm('确定要删除语音场景 "' + triggerPhrase + '" 吗？')) {
-                return;
-            }
-
+        async function deleteScene(sceneId, triggerPhrase) {{
+            if (!confirm('确定要删除语音场景 "' + triggerPhrase + '" 吗？')) {{ return; }}
             const btn = event.target;
             btn.disabled = true;
             btn.textContent = '删除中...';
-
-            try {
-                const response = await fetch(API_BASE + '/' + sceneId, {
-                    method: 'DELETE'
-                });
+            try {{
+                const response = await fetch(API_BASE + '/' + sceneId, {{ method: 'DELETE' }});
+                if (response.status === 401) {{
+                    showToast('请先登录后再删除', 'error');
+                    btn.disabled = false;
+                    btn.textContent = '删除';
+                    return;
+                }}
                 const data = await response.json();
-
-                if (data.success) {
+                if (data.success) {{
                     showToast('删除成功', 'success');
-                    document.getElementById('scene-' + sceneId).remove();
-
+                    const el = document.getElementById('scene-' + sceneId);
+                    if (el) el.remove();
                     const remaining = document.querySelectorAll('.scene-card');
-                    if (remaining.length === 0) {
+                    if (remaining.length === 0) {{
                         document.getElementById('content').innerHTML =
                             '<div class="empty-state">暂无语音场景<br><br>通过语音创建，如：<br>"当我说晚安的时候，帮我关灯"</div>';
-                    }
-                } else {
-                    throw new Error(data.error || '删除失败');
-                }
-            } catch (error) {
+                    }}
+                }} else {{ throw new Error(data.error || '删除失败'); }}
+            }} catch (error) {{
                 showToast(error.message, 'error');
                 btn.disabled = false;
                 btn.textContent = '删除';
-            }
-        }
+            }}
+        }}
 
-        function showToast(message, type) {
+        function showToast(message, type) {{
             const toast = document.getElementById('toast');
             toast.textContent = message;
             toast.className = 'toast ' + type;
             toast.style.display = 'block';
-            setTimeout(function() {
-                toast.style.display = 'none';
-            }, 2000);
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        loadScenes();
+            setTimeout(function() {{ toast.style.display = 'none'; }}, 2000);
+        }}
     </script>
 </body>
 </html>"""
