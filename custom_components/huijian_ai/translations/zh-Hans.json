@@ -222,7 +222,8 @@
                     "allow_service_calls": "允许设备执行 Home Assistant 动作。",
                     "llm_hass_api": "控制 Home Assistant",
                     "subscribe_logs": "订阅来自设备的日志。",
-                    "to_delete": "选择要删除的场景"
+                    "to_delete": "选择要删除的场景",
+                    "to_delete_auto": "选择要删除的自动化"
                 },
                 "data_description": {
                     "allow_service_calls": "启用后，设备可以执行 Home Assistant 动作或发送事件。请仅在您信任该设备的情况下启用此功能。",

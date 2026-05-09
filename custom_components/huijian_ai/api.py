@@ -146,7 +146,7 @@ class VoiceSceneDeleteView(HomeAssistantView):
 
 
 class VoiceScenesManageView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/huijian-ai/voice-scenes/manage"
     name = "huijian-ai:voice-scenes:manage"
 
@@ -297,6 +297,10 @@ class VoiceScenesManageView(HomeAssistantView):
 
             try {
                 const response = await fetch(API_BASE);
+                if (response.status === 401) {
+                    content.innerHTML = '<div class="unauth-box"><div class="icon">🔒</div><h2>请先登录 Home Assistant</h2><p>访问此页面需要登录您的 HA 账号</p><a class="login-btn" href="/auth/login?redirect=/huijian-ai/voice-scenes/manage">前往登录</a></div>';
+                    return;
+                }
                 const data = await response.json();
 
                 if (!data.success) {
