@@ -144,6 +144,29 @@ class VoiceSceneDeleteView(HomeAssistantView):
                 "error": str(e)
             }, 500)
 
+    async def put(self, request: web.Request, scene_id: str):
+        """Update a voice scene's trigger phrase and/or actions."""
+        hass = request.app[KEY_HASS]
+        try:
+            body = await request.json()
+            store = get_voice_scene_store(hass)
+            success, message = await store.update_scene(
+                scene_id,
+                trigger_phrase=body.get("trigger_phrase"),
+                actions=body.get("actions"),
+            )
+            return self.json({
+                "success": success,
+                "message": message if success else None,
+                "error": message if not success else None,
+            }, 200 if success else 400)
+        except Exception as e:
+            _LOGGER.error(f"Failed to update voice scene: {e}")
+            return self.json({
+                "success": False,
+                "error": str(e)
+            }, 500)
+
 
 class VoiceScenesManageView(HomeAssistantView):
     requires_auth = False
@@ -179,6 +202,7 @@ class VoiceScenesManageView(HomeAssistantView):
     <div class="scene-header">
         <span class="scene-trigger">"{trigger}"</span>
         <button class="delete-btn" onclick="deleteScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">删除</button>
+        <button class="edit-btn" onclick="openEditScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">编辑</button>
     </div>
     <div class="scene-info">创建时间: {created_display}</div>
     <div class="scene-actions">
@@ -209,6 +233,22 @@ class VoiceScenesManageView(HomeAssistantView):
         .delete-btn {{ background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }}
         .delete-btn:hover {{ background: #d32f2f; }}
         .delete-btn:disabled {{ background: #ccc; cursor: not-allowed; }}
+        .edit-btn {{ background: #4caf50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 8px; }}
+        .edit-btn:hover {{ background: #388e3c; }}
+        .modal {{ display: none; position: fixed; z-index: 999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }}
+        .modal-content {{ background: #fff; margin: 80px auto; padding: 24px; max-width: 500px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }}
+        .modal-content h2 {{ font-size: 20px; margin-bottom: 16px; color: #333; }}
+        .modal-content label {{ display: block; font-size: 14px; color: #555; margin-bottom: 4px; }}
+        .edit-input {{ width: 100%; padding: 10px; margin-bottom: 16px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; }}
+        .edit-input:focus {{ border-color: #03a9f4; outline: none; }}
+        .edit-actions-preview {{ background: #f5f5f5; border-radius: 4px; padding: 8px 12px; font-size: 13px; margin-bottom: 16px; }}
+        .edit-actions-preview .label {{ font-weight: 600; color: #555; margin-bottom: 4px; }}
+        .modal-buttons {{ display: flex; gap: 8px; justify-content: flex-end; }}
+        .save-btn {{ background: #03a9f4; color: white; border: none; padding: 10px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; }}
+        .save-btn:hover {{ background: #0288d1; }}
+        .save-btn:disabled {{ background: #ccc; cursor: not-allowed; }}
+        .cancel-btn {{ background: #999; color: white; border: none; padding: 10px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; }}
+        .cancel-btn:hover {{ background: #777; }}
         .scene-info {{ font-size: 14px; color: #666; margin-bottom: 8px; }}
         .scene-actions {{ background: #f5f5f5; border-radius: 4px; padding: 8px 12px; font-size: 13px; }}
         .scene-actions-title {{ font-weight: 600; margin-bottom: 4px; color: #555; }}
@@ -270,7 +310,116 @@ class VoiceScenesManageView(HomeAssistantView):
             toast.style.display = 'block';
             setTimeout(function() {{ toast.style.display = 'none'; }}, 2000);
         }}
+
+        /* -- Edit scene modal -- */
+        function openEditScene(sceneId, triggerPhrase) {{
+            document.getElementById('editSceneId').value = sceneId;
+            document.getElementById('editTriggerPhrase').value = triggerPhrase;
+            document.getElementById('editModal').style.display = 'block';
+        }}
+
+        async function saveEdit() {{
+            const sceneId = document.getElementById('editSceneId').value;
+            const newPhrase = document.getElementById('editTriggerPhrase').value.trim();
+            if (!newPhrase) {{ showToast('请输入触发词', 'error'); return; }}
+            const btn = document.getElementById('editSaveBtn');
+            btn.disabled = true; btn.textContent = '保存中...';
+            try {{
+                const res = await fetch(SCENES_API + '/' + sceneId, {{
+                    method: 'PUT',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ trigger_phrase: newPhrase }})
+                }});
+                const data = await res.json();
+                if (data.success) {{
+                    showToast('更新成功', 'success');
+                    closeEdit();
+                    setTimeout(function() {{ location.reload(); }}, 500);
+                }} else {{ throw new Error(data.error || '更新失败'); }}
+            }} catch (e) {{ showToast(e.message, 'error'); }}
+            btn.disabled = false; btn.textContent = '保存';
+        }}
+
+        function closeEdit() {{
+            document.getElementById('editModal').style.display = 'none';
+        }}
+
+        /* -- Edit automation modal -- */
+        function openEditAuto(autoId, entityId, above, below) {{
+            document.getElementById('editAutoId').value = autoId;
+            document.getElementById('editAutoEntity').value = entityId;
+            document.getElementById('editAutoAbove').value = (above && above !== 'None') ? above : '';
+            document.getElementById('editAutoBelow').value = (below && below !== 'None') ? below : '';
+            document.getElementById('editAutoModal').style.display = 'block';
+        }}
+
+        async function saveAutoEdit() {{
+            const autoId = document.getElementById('editAutoId').value;
+            const entity = document.getElementById('editAutoEntity').value.trim();
+            if (!entity) {{ showToast('请输入传感器实体ID', 'error'); return; }}
+            const above = document.getElementById('editAutoAbove').value;
+            const below = document.getElementById('editAutoBelow').value;
+            const trigger = {{ entity_id: entity }};
+            if (above) trigger.above = parseFloat(above);
+            if (below) trigger.below = parseFloat(below);
+            const btn = document.getElementById('autoEditSaveBtn');
+            btn.disabled = true; btn.textContent = '保存中...';
+            try {{
+                const res = await fetch(AUTOS_API + '/' + autoId, {{
+                    method: 'PUT',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ trigger: trigger }})
+                }});
+                const data = await res.json();
+                if (data.success) {{
+                    showToast('更新成功', 'success');
+                    closeAutoEdit();
+                    setTimeout(function() {{ location.reload(); }}, 500);
+                }} else {{ throw new Error(data.error || '更新失败'); }}
+            }} catch (e) {{ showToast(e.message, 'error'); }}
+            btn.disabled = false; btn.textContent = '保存';
+        }}
+
+        function closeAutoEdit() {{
+            document.getElementById('editAutoModal').style.display = 'none';
+        }}
+
+        window.onclick = function(e) {{
+            if (e.target === document.getElementById('editModal')) closeEdit();
+            if (e.target === document.getElementById('editAutoModal')) closeAutoEdit();
+        }}
     </script>
+
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h2>编辑语音场景</h2>
+            <input id="editSceneId" type="hidden">
+            <label>触发词</label>
+            <input id="editTriggerPhrase" type="text" class="edit-input" placeholder="例如: 当我说晚安的时候">
+            <div class="modal-buttons">
+                <button id="editSaveBtn" class="save-btn" onclick="saveEdit()">保存</button>
+                <button class="cancel-btn" onclick="closeEdit()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editAutoModal" class="modal">
+        <div class="modal-content">
+            <h2>编辑传感器自动化</h2>
+            <input id="editAutoId" type="hidden">
+            <label>传感器实体ID</label>
+            <input id="editAutoEntity" type="text" class="edit-input" placeholder="例如: sensor.office_temperature">
+            <label>高于（度）</label>
+            <input id="editAutoAbove" type="number" step="0.1" class="edit-input" placeholder="留空则不限制">
+            <label>低于（度）</label>
+            <input id="editAutoBelow" type="number" step="0.1" class="edit-input" placeholder="留空则不限制">
+            <div class="modal-buttons">
+                <button id="autoEditSaveBtn" class="save-btn" onclick="saveAutoEdit()">保存</button>
+                <button class="cancel-btn" onclick="closeAutoEdit()">取消</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>"""
 
@@ -368,6 +517,7 @@ class CombinedManageView(HomeAssistantView):
     <div class="card-header">
         <div><span class="card-trigger auto">{html_mod.escape(trigger_display)}</span><span class="card-tag auto">传感器自动化</span></div>
         <button class="delete-btn" onclick="deleteAutomation('{auto_id}', '{html_mod.escape(trigger_display.replace("'", "\\'"))}')">删除</button>
+        <button class="edit-btn" onclick="openEditAuto('{auto_id}', '{html_mod.escape(trigger_entity.replace("'", "\\'"))}', '{above}', '{below if below is not None else ""}')">编辑</button>
     </div>
     <div class="info">创建时间: {created_display}{trigger_info}</div>
     <div class="actions-box">
@@ -661,6 +811,40 @@ class AutomationDeleteView(HomeAssistantView):
                 }, 404)
         except Exception as e:
             _LOGGER.error(f"Failed to delete automation: {e}")
+            return self.json({
+                "success": False,
+                "error": str(e)
+            }, 500)
+
+    async def put(self, request: web.Request, automation_id: str):
+        """Update an automation's trigger and/or actions."""
+        hass = request.app[KEY_HASS]
+        try:
+            body = await request.json()
+            store = get_automation_store(hass)
+            existing = await store.get_automation(automation_id)
+            if not existing:
+                return self.json({
+                    "success": False,
+                    "error": f"未找到自动化ID'{automation_id}'"
+                }, 404)
+
+            trigger = body.get("trigger")
+            actions = body.get("actions")
+            if not trigger and not actions:
+                return self.json({
+                    "success": False,
+                    "error": "请提供要修改的trigger或actions"
+                }, 400)
+
+            success, message = await store.update_automation(automation_id, trigger, actions)
+            return self.json({
+                "success": success,
+                "message": message if success else None,
+                "error": message if not success else None,
+            }, 200 if success else 400)
+        except Exception as e:
+            _LOGGER.error(f"Failed to update automation: {e}")
             return self.json({
                 "success": False,
                 "error": str(e)

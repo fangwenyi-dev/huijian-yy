@@ -122,6 +122,36 @@ class VoiceSceneStore:
             else:
                 return False, "请提供trigger_phrase或scene_id"
 
+    async def update_scene(self, scene_id: str, trigger_phrase: str | None = None, actions: list[dict[str, Any]] | None = None) -> tuple[bool, str]:
+        """Update a scene's trigger phrase and/or actions.
+
+        Returns:
+            tuple: (success, message)
+        """
+        async with self._lock:
+            data = await self._load_data()
+            scenes = data.get("scenes", {})
+            if scene_id not in scenes:
+                return False, f"未找到场景ID'{scene_id}'"
+
+            scene = scenes[scene_id]
+            old_trigger = scene.get("trigger_phrase", "")
+
+            if trigger_phrase is not None and trigger_phrase != old_trigger:
+                if trigger_phrase in data.get("trigger_index", {}):
+                    return False, f"触发词'{trigger_phrase}'已存在"
+                if old_trigger and old_trigger in data.get("trigger_index", {}):
+                    del data["trigger_index"][old_trigger]
+                data.setdefault("trigger_index", {})[trigger_phrase] = scene_id
+                scene["trigger_phrase"] = trigger_phrase
+
+            if actions is not None:
+                scene["actions"] = actions
+
+            await self._save_data(data)
+            _LOGGER.info(f"Updated voice scene: {scene_id}")
+            return True, f"已更新语音场景：{scene.get('trigger_phrase', scene_id)}"
+
 
 _store_instance: VoiceSceneStore | None = None
 
