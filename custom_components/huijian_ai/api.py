@@ -386,7 +386,7 @@ class VoiceScenesManageView(HomeAssistantView):
 
 
 class CombinedManageView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/manage-page"
     name = "api:huijian-ai:manage-page"
 
@@ -428,13 +428,19 @@ class CombinedManageView(HomeAssistantView):
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 12px 24px; border-radius: 4px; display: none; z-index: 1000; }
         .toast.success { background: #4caf50; }
         .toast.error { background: #f44336; }
+        .unauth-box { text-align: center; padding: 60px 20px; }
+        .unauth-box .icon { font-size: 64px; color: #ff9800; margin-bottom: 16px; }
+        .unauth-box h2 { font-size: 20px; color: #333; margin-bottom: 8px; }
+        .unauth-box p { font-size: 14px; color: #999; margin-bottom: 20px; }
+        .login-btn { display: inline-block; background: #03a9f4; color: white; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-size: 16px; }
+        .login-btn:hover { background: #0288d1; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>智能场景</h1>
         <div class="subtitle">语音场景 + 传感器自动化 统一管理</div>
-        <button class="refresh-btn" onclick="loadAll()">刷新列表</button>
+        <button class="refresh-btn" onclick="loadAll()" id="refreshBtn" style="display:none">刷新列表</button>
         <div id="content">
             <div class="loading">加载中...</div>
         </div>
@@ -454,11 +460,23 @@ class CombinedManageView(HomeAssistantView):
                     fetch(SCENES_API),
                     fetch(AUTOS_API)
                 ]);
+
+                if (scenesRes.status === 401 || autosRes.status === 401) {
+                    content.innerHTML = '<div class="unauth-box">' +
+                        '<div class="icon">🔒</div>' +
+                        '<h2>请先登录 Home Assistant</h2>' +
+                        '<p>访问此页面需要登录您的 Home Assistant 账号</p>' +
+                        '<a class="login-btn" href="/auth/login?redirect=/api/huijian-ai/manage-page">前往登录</a>' +
+                    '</div>';
+                    return;
+                }
+
                 const scenesData = await scenesRes.json();
                 const autosData = await autosRes.json();
 
                 const scenes = (scenesData.scenes || []);
                 const automations = (autosData.automations || []);
+                document.getElementById('refreshBtn').style.display = '';
                 let html = '';
 
                 if (scenes.length === 0 && automations.length === 0) {
@@ -520,6 +538,12 @@ class CombinedManageView(HomeAssistantView):
             btn.textContent = '删除中...';
             try {
                 const res = await fetch(SCENES_API + '/' + sceneId, { method: 'DELETE' });
+                if (res.status === 401) {
+                    showToast('请先登录 Home Assistant', 'error');
+                    btn.disabled = false;
+                    btn.textContent = '删除';
+                    return;
+                }
                 const data = await res.json();
                 if (data.success) {
                     showToast('删除成功', 'success');
@@ -540,6 +564,12 @@ class CombinedManageView(HomeAssistantView):
             btn.textContent = '删除中...';
             try {
                 const res = await fetch(AUTOS_API + '/' + automationId, { method: 'DELETE' });
+                if (res.status === 401) {
+                    showToast('请先登录 Home Assistant', 'error');
+                    btn.disabled = false;
+                    btn.textContent = '删除';
+                    return;
+                }
                 const data = await res.json();
                 if (data.success) {
                     showToast('删除成功', 'success');
