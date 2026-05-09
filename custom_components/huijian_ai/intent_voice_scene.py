@@ -172,6 +172,10 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         "'你听到我说xxx就yyy', '如果我说xxx就开机'. "
         "DO NOT use for sensor/condition-based triggers (temperature, humidity, etc.) - "
         "use HassCreateAutomation for those. "
+        "IMPORTANT WINDOW RULE: If user says '打开窗户'/'打开展厅的平推窗' etc., "
+        "use TurnDeviceOn (NOT ControlWindow). The system will auto-convert it to ControlWindow(open). "
+        "If user says '关闭窗户'/'关窗' etc., "
+        "use TurnDeviceOff. The system will auto-convert it to ControlWindow(close). "
         "Parameters: trigger_phrase (a spoken phrase that will trigger the scene), "
         "actions (array of intent+params objects)."
     )
