@@ -99,6 +99,67 @@ def _split_actions_by_device(actions: list[dict]) -> list[dict]:
     _LOGGER.info(f"Split actions: {len(actions)} -> {len(split_actions)}")
     return split_actions
 
+
+async def _resolve_entity_id(
+    hass: HomeAssistant, trigger: dict
+) -> tuple[str | None, str | None]:
+    """解析传感器的正确 entity_id。
+
+    如果 LLM 传入的 entity_id 不存在，自动搜索 HA 中匹配的传感器。
+    返回 (resolved_entity_id, warning_message)。
+    """
+    entity_id = (trigger.get("entity_id", "") or "").strip().lower()
+    if not entity_id:
+        return None, None
+
+    state = hass.states.get(entity_id)
+    if state is not None:
+        return entity_id, None
+
+    _LOGGER.info(f"Entity '{entity_id}' not found, searching for matching sensor...")
+
+    # 搜索 device_class 为 temperature 的传感器
+    temp_sensors = []
+    for s in hass.states.async_all():
+        if s.domain != "sensor":
+            continue
+        dc = s.attributes.get("device_class", "")
+        if dc == "temperature":
+            temp_sensors.append(s)
+
+    _LOGGER.info(f"Found {len(temp_sensors)} temperature sensors: {[s.entity_id for s in temp_sensors]}")
+
+    search_parts = [p for p in entity_id.replace("sensor.", "").replace("_", " ").replace(".", " ").split() if len(p) > 2]
+
+    if len(temp_sensors) == 1:
+        resolved = temp_sensors[0].entity_id
+        _LOGGER.info(f"Resolved (single temp sensor): {entity_id} -> {resolved}")
+        return resolved, f"已将传感器修正为：{temp_sensors[0].attributes.get('friendly_name', resolved)}"
+
+    candidates = []
+    for s in temp_sensors:
+        name_lower = (s.attributes.get("friendly_name", "") or "").lower()
+        eid_lower = s.entity_id.lower()
+        for part in search_parts:
+            if part in name_lower or part in eid_lower:
+                candidates.append(s)
+                break
+
+    _LOGGER.info(f"Name-matched candidates: {[s.entity_id for s in candidates]}")
+
+    if len(candidates) == 1:
+        resolved = candidates[0].entity_id
+        return resolved, f"已将传感器修正为：{candidates[0].attributes.get('friendly_name', resolved)}"
+
+    if len(candidates) > 1:
+        return None, f"找到多个温度传感器：{', '.join(s.entity_id for s in candidates)}，请指定正确的传感器名称"
+
+    if len(temp_sensors) > 1:
+        return None, f"未找到匹配的温度传感器（已搜索：{', '.join(s.entity_id for s in temp_sensors)}）"
+
+    return None, f"未找到任何温度传感器，请确认 entity_id 是否正确"
+
+
 class AutomationStore:
     """Manage automation storage using HA's storage mechanism."""
 
@@ -276,6 +337,43 @@ class AutomationManager:
         except Exception as e:
             _LOGGER.error(f"Error in _async_check_automations: {e}")
 
+    async def _check_immediate(self, trigger: dict, actions: list[dict], automation_id: str):
+        """创建自动化后立即检查当前传感器值是否已满足条件。"""
+        entity_id = (trigger.get("entity_id", "") or "").strip()
+        if not entity_id:
+            return
+
+        state = self._hass.states.get(entity_id)
+        if state is None or state.state is None:
+            _LOGGER.debug(f"Immediate check: {entity_id} has no state")
+            return
+
+        try:
+            value = float(state.state)
+        except (ValueError, TypeError):
+            _LOGGER.debug(f"Immediate check: {entity_id} state not numeric ({state.state})")
+            return
+
+        above = trigger.get("above")
+        below = trigger.get("below")
+
+        condition_met = True
+        if above is not None:
+            if value <= float(above):
+                condition_met = False
+        if below is not None:
+            if value >= float(below):
+                condition_met = False
+
+        if not condition_met:
+            _LOGGER.debug(f"Immediate check: condition not met for {automation_id} ({entity_id}={value})")
+            return
+
+        now = datetime.now().timestamp()
+        self._triggered_cache[automation_id] = now
+        _LOGGER.info(f"Automation triggered (initial check): {automation_id} ({entity_id}={value})")
+        await self._execute_actions(actions)
+
     @callback
     def _extract_entity_ids(self, trigger_text: str) -> list[str]:
         result = []
@@ -365,6 +463,13 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
         if not actions:
             return {"success": False, "error": "actions不能为空"}
 
+        resolved, warning = await _resolve_entity_id(intent_obj.hass, trigger)
+        if resolved is None:
+            return {"success": False, "error": warning or f"传感器 {trigger.get('entity_id', '')} 不存在"}
+        if resolved != trigger.get("entity_id", "").lower():
+            _LOGGER.info(f"Entity auto-resolved: {trigger['entity_id']} -> {resolved}")
+            trigger["entity_id"] = resolved
+
         split_actions = _split_actions_by_device(actions)
         _LOGGER.info(f"HassCreateAutomation split_actions={split_actions}")
 
@@ -375,6 +480,11 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
             manager = get_automation_manager(intent_obj.hass)
             if manager._unsub is None:
                 await manager.async_start()
+
+            try:
+                await manager._check_immediate(trigger, split_actions, result)
+            except Exception as e:
+                _LOGGER.error(f"Immediate check failed: {e}")
 
             entity_id = trigger.get("entity_id", "")
             above = trigger.get("above")
@@ -388,7 +498,8 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
             return {
                 "success": True,
                 "automation_id": result,
-                "message": f"已创建自动化：当{entity_id}{'、'.join(condition_parts)}时执行操作"
+                "message": f"已创建自动化：当{entity_id}{'、'.join(condition_parts)}时执行操作",
+                "warning": warning,
             }
         else:
             return {"success": False, "error": result}
