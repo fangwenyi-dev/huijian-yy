@@ -387,8 +387,8 @@ class VoiceScenesManageView(HomeAssistantView):
 
 class CombinedManageView(HomeAssistantView):
     requires_auth = True
-    url = "/huijian-ai/manage"
-    name = "huijian-ai:manage"
+    url = "/api/huijian-ai/manage-page"
+    name = "api:huijian-ai:manage-page"
 
     async def get(self, request: web.Request):
         html_content = """<!DOCTYPE html>
@@ -780,7 +780,7 @@ class AutomationsManageView(HomeAssistantView):
         <h1>传感器自动化</h1>
         <div class="subtitle">当传感器数值满足条件时自动执行操作</div>
         <div class="nav-buttons">
-            <a href="/huijian-ai/manage">&larr; 返回智能场景总览</a>
+            <a href="/api/huijian-ai/manage-page">&larr; 返回智能场景总览</a>
         </div>
         <button class="refresh-btn" onclick="loadAutomations()">刷新列表</button>
         <div id="content">
