@@ -1,4 +1,6 @@
 import logging
+import html as html_mod
+from datetime import datetime
 from aiohttp import web
 from homeassistant.const import ATTR_FRIENDLY_NAME
 from homeassistant.core import HomeAssistant
@@ -276,6 +278,9 @@ class VoiceScenesManageView(HomeAssistantView):
 <body>
     <div class="container">
         <h1>语音场景管理</h1>
+        <div class="nav-buttons" style="margin-bottom:12px">
+            <a href="/api/huijian-ai/manage-page" style="display:inline-block;background:#03a9f4;color:white;text-decoration:none;padding:8px 16px;border-radius:4px;font-size:14px">智能场景总览</a>
+        </div>
         <button class="refresh-btn" onclick="loadScenes()">刷新列表</button>
         <div id="content">
             <div class="loading">加载中...</div>
@@ -391,59 +396,159 @@ class CombinedManageView(HomeAssistantView):
     name = "api:huijian-ai:manage-page"
 
     async def get(self, request: web.Request):
-        html_content = """<!DOCTYPE html>
+        hass = request.app[KEY_HASS]
+
+        scene_store = get_voice_scene_store(hass)
+        auto_store = get_automation_store(hass)
+        scenes_raw = await scene_store.get_all_scenes()
+        automations_raw = await auto_store.get_all_automations()
+
+        scene_cards_html = ""
+        auto_cards_html = ""
+
+        for scene in scenes_raw:
+            scene_id = html_mod.escape(str(scene.get("scene_id", "")))
+            trigger = html_mod.escape(str(scene.get("trigger_phrase", "")))
+            created = scene.get("created_at", "")
+            created_display = ""
+            if created:
+                try:
+                    dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    created_display = dt.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    created_display = str(created)
+            actions_raw = scene.get("actions", [])
+            action_summaries = [_action_to_text(a) for a in actions_raw]
+            action_count = len(action_summaries)
+
+            actions_html = ""
+            for s in action_summaries:
+                actions_html += f'<div class="action-item">- {html_mod.escape(s)}</div>'
+
+            scene_cards_html += f"""
+<div class="card scene" id="scene-{scene_id}">
+    <div class="card-header">
+        <div><span class="card-trigger scene">"{trigger}"</span><span class="card-tag scene">语音场景</span></div>
+        <button class="delete-btn" onclick="deleteScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">删除</button>
+    </div>
+    <div class="info">创建时间: {created_display}</div>
+    <div class="actions-box">
+        <div class="actions-title">执行动作 ({action_count}个):</div>
+        {actions_html}
+    </div>
+</div>"""
+
+        for auto in automations_raw:
+            auto_id = html_mod.escape(str(auto.get("automation_id", "")))
+            trigger_entity = auto.get("trigger", {}).get("entity_id", "")
+            friendly = _entity_id_to_friendly(hass, trigger_entity)
+            above = auto.get("trigger", {}).get("above")
+            below = auto.get("trigger", {}).get("below")
+            cond_parts = []
+            if above is not None:
+                cond_parts.append(f"> {above}度")
+            if below is not None:
+                cond_parts.append(f"< {below}度")
+            trigger_display = f"{friendly} {'、'.join(cond_parts)}" if cond_parts else friendly
+
+            created = auto.get("created_at", "")
+            created_display = ""
+            if created:
+                try:
+                    dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    created_display = dt.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    created_display = str(created)
+
+            last_triggered = auto.get("last_triggered")
+            trigger_info = " | 尚未触发"
+            if last_triggered:
+                try:
+                    dt = datetime.fromisoformat(str(last_triggered).replace("Z", "+00:00"))
+                    trigger_info = f" | 上次触发: {dt.strftime('%Y-%m-%d %H:%M')}"
+                except Exception:
+                    trigger_info = " | 已触发"
+
+            actions_raw = auto.get("actions", [])
+            summaries = [_action_to_text(a) for a in actions_raw]
+            count = len(summaries)
+            actions_html = ""
+            for s in summaries:
+                actions_html += f'<div class="action-item">- {html_mod.escape(s)}</div>'
+
+            auto_cards_html += f"""
+<div class="card auto" id="auto-{auto_id}">
+    <div class="card-header">
+        <div><span class="card-trigger auto">{html_mod.escape(trigger_display)}</span><span class="card-tag auto">传感器自动化</span></div>
+        <button class="delete-btn" onclick="deleteAutomation('{auto_id}', '{html_mod.escape(trigger_display.replace("'", "\\'"))}')">删除</button>
+    </div>
+    <div class="info">创建时间: {created_display}{trigger_info}</div>
+    <div class="actions-box">
+        <div class="actions-title">执行动作 ({count}个):</div>
+        {actions_html}
+    </div>
+</div>"""
+
+        has_scenes = len(scene_cards_html) > 0
+        has_autos = len(auto_cards_html) > 0
+
+        if not has_scenes and not has_autos:
+            content_html = '<div class="empty-state">暂无智能场景<br><br>通过语音创建语音场景，如："当我说晚安的时候，帮我关灯"<br>或<br>创建传感器自动化，如："当温度大于29度就打开窗户"</div>'
+        else:
+            parts = ""
+            if has_scenes:
+                parts += '<div class="section-title">语音场景</div>' + scene_cards_html
+            if has_autos:
+                parts += '<div class="section-title">传感器自动化</div>' + auto_cards_html
+            content_html = parts
+
+        html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>智能场景管理</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; padding: 20px; color: #333; }
-        .container { max-width: 800px; margin: 0 auto; }
-        h1 { font-size: 24px; margin-bottom: 4px; color: #03a9f4; }
-        .subtitle { font-size: 14px; color: #999; margin-bottom: 20px; }
-        .section-title { font-size: 18px; font-weight: 600; color: #333; margin: 20px 0 12px 0; padding-bottom: 8px; border-bottom: 2px solid #e0e0e0; }
-        .card { background: white; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
-        .card.scene { border-left: 4px solid #1976d2; }
-        .card.auto { border-left: 4px solid #ff9800; }
-        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-        .card-trigger { font-size: 18px; font-weight: 600; }
-        .card-trigger.scene { color: #1976d2; }
-        .card-trigger.auto { color: #e65100; }
-        .card-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px; vertical-align: middle; }
-        .card-tag.scene { background: #e3f2fd; color: #1976d2; }
-        .card-tag.auto { background: #fff3e0; color: #e65100; }
-        .delete-btn { background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        .delete-btn:hover { background: #d32f2f; }
-        .delete-btn:disabled { background: #ccc; cursor: not-allowed; }
-        .info { font-size: 14px; color: #666; margin-bottom: 8px; }
-        .actions-box { background: #f5f5f5; border-radius: 4px; padding: 8px 12px; font-size: 13px; }
-        .actions-title { font-weight: 600; margin-bottom: 4px; color: #555; }
-        .action-item { padding: 2px 0; color: #777; }
-        .empty-state { text-align: center; padding: 40px; color: #999; }
-        .loading { text-align: center; padding: 40px; color: #666; }
-        .refresh-btn { background: #4caf50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-bottom: 16px; }
-        .refresh-btn:hover { background: #388e3c; }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 12px 24px; border-radius: 4px; display: none; z-index: 1000; }
-        .toast.success { background: #4caf50; }
-        .toast.error { background: #f44336; }
-        .unauth-box { text-align: center; padding: 60px 20px; }
-        .unauth-box .icon { font-size: 64px; color: #ff9800; margin-bottom: 16px; }
-        .unauth-box h2 { font-size: 20px; color: #333; margin-bottom: 8px; }
-        .unauth-box p { font-size: 14px; color: #999; margin-bottom: 20px; }
-        .login-btn { display: inline-block; background: #03a9f4; color: white; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-size: 16px; }
-        .login-btn:hover { background: #0288d1; }
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; padding: 20px; color: #333; }}
+        .container {{ max-width: 800px; margin: 0 auto; }}
+        h1 {{ font-size: 24px; margin-bottom: 4px; color: #03a9f4; }}
+        .subtitle {{ font-size: 14px; color: #999; margin-bottom: 20px; }}
+        .section-title {{ font-size: 18px; font-weight: 600; color: #333; margin: 20px 0 12px 0; padding-bottom: 8px; border-bottom: 2px solid #e0e0e0; }}
+        .card {{ background: white; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }}
+        .card.scene {{ border-left: 4px solid #1976d2; }}
+        .card.auto {{ border-left: 4px solid #ff9800; }}
+        .card-header {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }}
+        .card-trigger {{ font-size: 18px; font-weight: 600; }}
+        .card-trigger.scene {{ color: #1976d2; }}
+        .card-trigger.auto {{ color: #e65100; }}
+        .card-tag {{ display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px; vertical-align: middle; }}
+        .card-tag.scene {{ background: #e3f2fd; color: #1976d2; }}
+        .card-tag.auto {{ background: #fff3e0; color: #e65100; }}
+        .delete-btn {{ background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }}
+        .delete-btn:hover {{ background: #d32f2f; }}
+        .delete-btn:disabled {{ background: #ccc; cursor: not-allowed; }}
+        .info {{ font-size: 14px; color: #666; margin-bottom: 8px; }}
+        .actions-box {{ background: #f5f5f5; border-radius: 4px; padding: 8px 12px; font-size: 13px; }}
+        .actions-title {{ font-weight: 600; margin-bottom: 4px; color: #555; }}
+        .action-item {{ padding: 2px 0; color: #777; }}
+        .empty-state {{ text-align: center; padding: 40px; color: #999; }}
+        .toast {{ position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 12px 24px; border-radius: 4px; display: none; z-index: 1000; }}
+        .toast.success {{ background: #4caf50; }}
+        .toast.error {{ background: #f44336; }}
+        .unauth-box {{ text-align: center; padding: 60px 20px; }}
+        .unauth-box .icon {{ font-size: 64px; color: #ff9800; margin-bottom: 16px; }}
+        .unauth-box h2 {{ font-size: 20px; color: #333; margin-bottom: 8px; }}
+        .unauth-box p {{ font-size: 14px; color: #999; margin-bottom: 20px; }}
+        .login-btn {{ display: inline-block; background: #03a9f4; color: white; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-size: 16px; }}
+        .login-btn:hover {{ background: #0288d1; }}
     </style>
 </head>
 <body>
     <div class="container">
         <h1>智能场景</h1>
         <div class="subtitle">语音场景 + 传感器自动化 统一管理</div>
-        <button class="refresh-btn" onclick="loadAll()" id="refreshBtn" style="display:none">刷新列表</button>
-        <div id="content">
-            <div class="loading">加载中...</div>
-        </div>
+        <div id="content">{content_html}</div>
     </div>
     <div class="toast" id="toast"></div>
 
@@ -451,154 +556,65 @@ class CombinedManageView(HomeAssistantView):
         const SCENES_API = '/api/huijian-ai/voice-scenes';
         const AUTOS_API = '/api/huijian-ai/automations';
 
-        async function loadAll() {
-            const content = document.getElementById('content');
-            content.innerHTML = '<div class="loading">加载中...</div>';
-
-            try {
-                const [scenesRes, autosRes] = await Promise.all([
-                    fetch(SCENES_API),
-                    fetch(AUTOS_API)
-                ]);
-
-                if (scenesRes.status === 401 || autosRes.status === 401) {
-                    content.innerHTML = '<div class="unauth-box">' +
-                        '<div class="icon">🔒</div>' +
-                        '<h2>请先登录 Home Assistant</h2>' +
-                        '<p>访问此页面需要登录您的 Home Assistant 账号</p>' +
-                        '<a class="login-btn" href="/auth/login?redirect=/api/huijian-ai/manage-page">前往登录</a>' +
-                    '</div>';
-                    return;
-                }
-
-                const scenesData = await scenesRes.json();
-                const autosData = await autosRes.json();
-
-                const scenes = (scenesData.scenes || []);
-                const automations = (autosData.automations || []);
-                document.getElementById('refreshBtn').style.display = '';
-                let html = '';
-
-                if (scenes.length === 0 && automations.length === 0) {
-                    content.innerHTML = '<div class="empty-state">暂无智能场景<br><br>通过语音创建语音场景，如："当我说晚安的时候，帮我关灯"<br>或<br>创建传感器自动化，如："当温度大于29度就打开窗户"</div>';
-                    return;
-                }
-
-                if (scenes.length > 0) {
-                    html += '<div class="section-title">语音场景 (' + scenes.length + ')</div>';
-                    html += scenes.map(function(s) {
-                        return '<div class="card scene" id="scene-' + s.scene_id + '">' +
-                            '<div class="card-header">' +
-                                '<div><span class="card-trigger scene">"' + escapeHtml(s.trigger_phrase) + '"</span>' +
-                                '<span class="card-tag scene">语音场景</span></div>' +
-                                '<button class="delete-btn" onclick="deleteScene(\'' + s.scene_id + '\', \'' + escapeHtml(s.trigger_phrase) + '\')">删除</button>' +
-                            '</div>' +
-                            '<div class="info">创建时间: ' + (s.created_at ? new Date(s.created_at).toLocaleString('zh-CN') : '未知') + '</div>' +
-                            '<div class="actions-box">' +
-                                '<div class="actions-title">执行动作 (' + s.action_count + '个):</div>' +
-                                (s.action_summaries || []).map(function(a) { return '<div class="action-item">- ' + escapeHtml(a) + '</div>'; }).join('') +
-                            '</div>' +
-                        '</div>';
-                    }).join('');
-                }
-
-                if (automations.length > 0) {
-                    html += '<div class="section-title">传感器自动化 (' + automations.length + ')</div>';
-                    html += automations.map(function(a) {
-                        var triggerText = a.trigger_display || a.trigger_entity;
-                        return '<div class="card auto" id="auto-' + a.automation_id + '">' +
-                            '<div class="card-header">' +
-                                '<div><span class="card-trigger auto">' + escapeHtml(triggerText) + '</span>' +
-                                '<span class="card-tag auto">传感器自动化</span></div>' +
-                                '<button class="delete-btn" onclick="deleteAutomation(\'' + a.automation_id + '\', \'' + escapeHtml(triggerText) + '\')">删除</button>' +
-                            '</div>' +
-                            '<div class="info">' +
-                                '创建时间: ' + (a.created_at ? new Date(a.created_at).toLocaleString('zh-CN') : '未知') +
-                                (a.last_triggered ? ' | 上次触发: ' + new Date(a.last_triggered).toLocaleString('zh-CN') : ' | 尚未触发') +
-                            '</div>' +
-                            '<div class="actions-box">' +
-                                '<div class="actions-title">执行动作 (' + a.action_count + '个):</div>' +
-                                (a.action_summaries || []).map(function(s) { return '<div class="action-item">- ' + escapeHtml(s) + '</div>'; }).join('') +
-                            '</div>' +
-                        '</div>';
-                    }).join('');
-                }
-
-                content.innerHTML = html;
-
-            } catch (error) {
-                content.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(error.message) + '</div>';
-            }
-        }
-
-        async function deleteScene(sceneId, triggerPhrase) {
-            if (!confirm('确定要删除语音场景 "' + triggerPhrase + '" 吗？')) { return; }
+        async function deleteScene(sceneId, triggerPhrase) {{
+            if (!confirm('确定要删除语音场景 "' + triggerPhrase + '" 吗？')) {{ return; }}
             const btn = event.target;
             btn.disabled = true;
             btn.textContent = '删除中...';
-            try {
-                const res = await fetch(SCENES_API + '/' + sceneId, { method: 'DELETE' });
-                if (res.status === 401) {
+            try {{
+                const res = await fetch(SCENES_API + '/' + sceneId, {{ method: 'DELETE' }});
+                if (res.status === 401) {{
                     showToast('请先登录 Home Assistant', 'error');
                     btn.disabled = false;
                     btn.textContent = '删除';
                     return;
-                }
+                }}
                 const data = await res.json();
-                if (data.success) {
+                if (data.success) {{
                     showToast('删除成功', 'success');
                     var el = document.getElementById('scene-' + sceneId);
                     if (el) el.remove();
-                } else { throw new Error(data.error || '删除失败'); }
-            } catch (e) {
+                }} else {{ throw new Error(data.error || '删除失败'); }}
+            }} catch (e) {{
                 showToast(e.message, 'error');
                 btn.disabled = false;
                 btn.textContent = '删除';
-            }
-        }
+            }}
+        }}
 
-        async function deleteAutomation(automationId, triggerText) {
-            if (!confirm('确定要删除传感器自动化 "' + triggerText + '" 吗？')) { return; }
+        async function deleteAutomation(automationId, triggerText) {{
+            if (!confirm('确定要删除传感器自动化 "' + triggerText + '" 吗？')) {{ return; }}
             const btn = event.target;
             btn.disabled = true;
             btn.textContent = '删除中...';
-            try {
-                const res = await fetch(AUTOS_API + '/' + automationId, { method: 'DELETE' });
-                if (res.status === 401) {
+            try {{
+                const res = await fetch(AUTOS_API + '/' + automationId, {{ method: 'DELETE' }});
+                if (res.status === 401) {{
                     showToast('请先登录 Home Assistant', 'error');
                     btn.disabled = false;
                     btn.textContent = '删除';
                     return;
-                }
+                }}
                 const data = await res.json();
-                if (data.success) {
+                if (data.success) {{
                     showToast('删除成功', 'success');
                     var el = document.getElementById('auto-' + automationId);
                     if (el) el.remove();
-                } else { throw new Error(data.error || '删除失败'); }
-            } catch (e) {
+                }} else {{ throw new Error(data.error || '删除失败'); }}
+            }} catch (e) {{
                 showToast(e.message, 'error');
                 btn.disabled = false;
                 btn.textContent = '删除';
-            }
-        }
+            }}
+        }}
 
-        function showToast(message, type) {
+        function showToast(message, type) {{
             const toast = document.getElementById('toast');
             toast.textContent = message;
             toast.className = 'toast ' + type;
             toast.style.display = 'block';
-            setTimeout(function() { toast.style.display = 'none'; }, 2000);
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        loadAll();
+            setTimeout(function() {{ toast.style.display = 'none'; }}, 2000);
+        }}
     </script>
 </body>
 </html>"""
