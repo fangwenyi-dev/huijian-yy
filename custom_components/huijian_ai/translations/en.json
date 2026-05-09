@@ -206,7 +206,7 @@
     "options": {
         "step": {
             "init": {
-                "description": "Voice Scenes:\n{scene_list}\n\nSensor Automations:\n{auto_list}",
+                "description": "Voice Scenes:\n{scene_list}\n\nSensor Automations:\n{auto_list}\n\n{manage_url}",
                 "data": {
                     "allow_service_calls": "Allow the device to perform Home Assistant actions.",
                     "llm_hass_api": "Control Home Assistant",

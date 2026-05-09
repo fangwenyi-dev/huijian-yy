@@ -1242,10 +1242,13 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 ),
             })
 
+        internal_url = get_url(self.hass, prefer_external=False)
+        manage_url_text = f"管理界面：{internal_url}/huijian-ai/voice-scenes/manage"
+
         return self.async_show_form(
             step_id="init",
             data_schema=data_schema,
-            description_placeholders={"scene_list": scene_desc, "auto_list": auto_desc},
+            description_placeholders={"scene_list": scene_desc, "auto_list": auto_desc, "manage_url": manage_url_text},
             last_step=False,
         )
 

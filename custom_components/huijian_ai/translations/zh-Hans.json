@@ -217,7 +217,7 @@
     "options": {
         "step": {
             "init": {
-                "description": "语音场景：\n{scene_list}\n\n传感器自动化：\n{auto_list}",
+                "description": "语音场景：\n{scene_list}\n\n传感器自动化：\n{auto_list}\n\n{manage_url}",
                 "data": {
                     "allow_service_calls": "允许设备执行 Home Assistant 动作。",
                     "llm_hass_api": "控制 Home Assistant",
