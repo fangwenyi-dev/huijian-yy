@@ -1373,8 +1373,10 @@ async def cleanup_instance(entry: ESPHomeConfigEntry) -> RuntimeEntryData:
     data.async_on_disconnect()
     for cleanup_callback in data.cleanup_callbacks:
         cleanup_callback()
-    await data.async_cleanup()
-    await data.client.disconnect()
+    try:
+        await data.async_cleanup()
+    finally:
+        await data.client.disconnect()
     return data
 
 
