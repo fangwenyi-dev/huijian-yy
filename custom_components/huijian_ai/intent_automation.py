@@ -12,6 +12,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
 
 from .const import DOMAIN
+from .intent_device_shared import is_window_device, split_actions_by_device, WINDOW_KEYWORDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,85 +21,6 @@ STORAGE_VERSION = 1
 
 DEBOUNCE_MINUTES = 5
 
-WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]
-WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
-WINDOW_DOMAINS = {"button", "window", "windows"}
-
-
-def _is_window_device(device: dict) -> bool:
-    name = device.get("name", "") or ""
-    domains = device.get("domains", [])
-    if any(kw in name for kw in WINDOW_EXCLUDE_KEYWORDS):
-        return False
-    if any(kw in name for kw in WINDOW_KEYWORDS):
-        return True
-    if isinstance(domains, list) and any(d in WINDOW_DOMAINS for d in domains):
-        return True
-    return False
-
-
-def _split_actions_by_device(actions: list[dict]) -> list[dict]:
-    if not actions:
-        return actions
-
-    split_actions = []
-    for action in actions:
-        intent_name = action.get("name") or action.get("intent", "")
-        params = action.get("parameters") or action.get("params", {})
-        targets = params.get("target", [])
-
-        if not isinstance(targets, list):
-            targets = [targets] if isinstance(targets, dict) else []
-            params["target"] = targets
-
-        normal_targets = []
-        window_targets = []
-
-        for target in targets:
-            if not isinstance(target, dict):
-                continue
-            devices = target.get("devices", [])
-            if not isinstance(devices, list):
-                devices = [devices] if isinstance(devices, dict) else []
-                target["devices"] = devices
-
-            normal_devices = []
-            window_devices = []
-
-            for device in devices:
-                if not isinstance(device, dict):
-                    continue
-                if _is_window_device(device):
-                    window_devices.append(device)
-                else:
-                    normal_devices.append(device)
-
-            if normal_devices:
-                normal_targets.append({**target, "devices": normal_devices})
-            if window_devices:
-                window_targets.append({**target, "devices": window_devices})
-
-        if normal_targets:
-            split_actions.append({
-                "name": intent_name,
-                "parameters": {**params, "target": normal_targets}
-            })
-
-        if window_targets:
-            action_mapping = {
-                "TurnDeviceOn": "ControlWindow",
-                "TurnDeviceOff": "ControlWindow",
-            }
-            window_intent = action_mapping.get(intent_name, intent_name)
-            window_action = "open" if intent_name == "TurnDeviceOn" else "close"
-            split_actions.append({
-                "name": window_intent,
-                "parameters": {"target": window_targets, "action": window_action}
-            })
-
-    _LOGGER.info(f"Split actions: {len(actions)} -> {len(split_actions)}")
-    return split_actions
-
 
 async def _resolve_entity_id(
     hass: HomeAssistant, trigger: dict
@@ -106,6 +28,7 @@ async def _resolve_entity_id(
     """解析传感器的正确 entity_id。
 
     如果 LLM 传入的 entity_id 不存在，自动搜索 HA 中匹配的传感器。
+    支持 temperature / humidity / 其他传感器类型的自动修正。
     返回 (resolved_entity_id, warning_message)。
     """
     entity_id = (trigger.get("entity_id", "") or "").strip().lower()
@@ -118,46 +41,90 @@ async def _resolve_entity_id(
 
     _LOGGER.info(f"Entity '{entity_id}' not found, searching for matching sensor...")
 
-    # 搜索 device_class 为 temperature 的传感器
-    temp_sensors = []
+    # 从 entity_id 名称推断传感器类型
+    raw_entity_id = entity_id.replace("sensor.", "").lower()
+    search_parts = [p for p in raw_entity_id.replace("_", " ").replace(".", " ").split() if len(p) > 2]
+
+    # device_class 推断映射
+    device_class_hints = {
+        "temperature": ["temperature", "temp", "温度"],
+        "humidity": ["humidity", "humi", "湿度"],
+        "illuminance": ["illuminance", "illumi", "light", "光照", "亮度"],
+        "pressure": ["pressure", "气压"],
+        "power": ["power", "功率", "电量"],
+        "energy": ["energy", "energy", "用电"],
+        "current": ["current", "电流"],
+        "voltage": ["voltage", "电压"],
+    }
+
+    guessed_classes = []
+    entity_name_lower = raw_entity_id.replace("_", " ")
+    for dc, hints in device_class_hints.items():
+        for hint in hints:
+            if hint in entity_name_lower:
+                guessed_classes.append(dc)
+                break
+
+    _LOGGER.info(f"Guessed device classes from '{raw_entity_id}': {guessed_classes}")
+
+    # 按 device_class 搜索
+    matched_by_class = []
     for s in hass.states.async_all():
         if s.domain != "sensor":
             continue
         dc = s.attributes.get("device_class", "")
-        if dc == "temperature":
-            temp_sensors.append(s)
+        if not dc:
+            continue
+        if guessed_classes and dc in guessed_classes:
+            matched_by_class.append(s)
 
-    _LOGGER.info(f"Found {len(temp_sensors)} temperature sensors: {[s.entity_id for s in temp_sensors]}")
+    _LOGGER.info(f"Sensors matched by device_class {guessed_classes}: {[s.entity_id for s in matched_by_class]}")
 
-    search_parts = [p for p in entity_id.replace("sensor.", "").replace("_", " ").replace(".", " ").split() if len(p) > 2]
-
-    if len(temp_sensors) == 1:
-        resolved = temp_sensors[0].entity_id
-        _LOGGER.info(f"Resolved (single temp sensor): {entity_id} -> {resolved}")
-        return resolved, f"已将传感器修正为：{temp_sensors[0].attributes.get('friendly_name', resolved)}"
-
-    candidates = []
-    for s in temp_sensors:
+    # 按名称搜索：friendly_name 或 entity_id 中匹配关键词
+    matched_by_name = []
+    for s in matched_by_class:
         name_lower = (s.attributes.get("friendly_name", "") or "").lower()
         eid_lower = s.entity_id.lower()
         for part in search_parts:
             if part in name_lower or part in eid_lower:
-                candidates.append(s)
+                matched_by_name.append(s)
                 break
 
-    _LOGGER.info(f"Name-matched candidates: {[s.entity_id for s in candidates]}")
+    _LOGGER.info(f"Name-matched candidates from type-matched sensors: {[s.entity_id for s in matched_by_name]}")
 
-    if len(candidates) == 1:
-        resolved = candidates[0].entity_id
-        return resolved, f"已将传感器修正为：{candidates[0].attributes.get('friendly_name', resolved)}"
+    if len(matched_by_name) == 1:
+        resolved = matched_by_name[0].entity_id
+        return resolved, f"已将传感器修正为：{matched_by_name[0].attributes.get('friendly_name', resolved)}"
 
-    if len(candidates) > 1:
-        return None, f"找到多个温度传感器：{', '.join(s.entity_id for s in candidates)}，请指定正确的传感器名称"
+    if len(matched_by_name) > 1:
+        return None, f"找到多个{guessed_classes[0] if guessed_classes else ''}传感器：{', '.join(s.entity_id for s in matched_by_name)}，请指定正确的传感器名称"
 
-    if len(temp_sensors) > 1:
-        return None, f"未找到匹配的温度传感器（已搜索：{', '.join(s.entity_id for s in temp_sensors)}）"
+    if len(matched_by_class) == 1:
+        resolved = matched_by_class[0].entity_id
+        return resolved, f"已将传感器修正为：{matched_by_class[0].attributes.get('friendly_name', resolved)}"
 
-    return None, f"未找到任何温度传感器，请确认 entity_id 是否正确"
+    # 兜底：在所有传感器中按名称搜索
+    all_candidates = []
+    for s in hass.states.async_all():
+        if s.domain != "sensor":
+            continue
+        name_lower = (s.attributes.get("friendly_name", "") or "").lower()
+        eid_lower = s.entity_id.lower()
+        for part in search_parts:
+            if part in name_lower or part in eid_lower:
+                all_candidates.append(s)
+                break
+
+    _LOGGER.info(f"All-sensor candidates: {[s.entity_id for s in all_candidates]}")
+
+    if len(all_candidates) == 1:
+        resolved = all_candidates[0].entity_id
+        return resolved, f"已将传感器修正为：{all_candidates[0].attributes.get('friendly_name', resolved)}"
+
+    if len(all_candidates) > 1:
+        return None, f"找到多个传感器：{', '.join(s.entity_id for s in all_candidates)}，请指定正确的传感器名称"
+
+    return None, f"未在 HA 中找到匹配的传感器"
 
 
 class AutomationStore:
@@ -470,7 +437,7 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
             _LOGGER.info(f"Entity auto-resolved: {trigger['entity_id']} -> {resolved}")
             trigger["entity_id"] = resolved
 
-        split_actions = _split_actions_by_device(actions)
+        split_actions = split_actions_by_device(actions)
         _LOGGER.info(f"HassCreateAutomation split_actions={split_actions}")
 
         store = get_automation_store(intent_obj.hass)
@@ -611,7 +578,7 @@ class HassUpdateAutomationIntent(ha_intent.IntentHandler):
 
         actions = None
         if actions_raw:
-            actions = _split_actions_by_device(actions_raw)
+            actions = split_actions_by_device(actions_raw)
 
         success, message = await store.update_automation(automation_id, trigger, actions)
 

@@ -11,6 +11,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import intent
 from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
+from .intent_device_shared import is_window_device, split_actions_by_device, WINDOW_KEYWORDS, WINDOW_EXCLUDE_KEYWORDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -180,96 +181,12 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         "actions (array of intent+params objects)."
     )
 
-    WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]
-    WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
-
     @property
     def slot_schema(self) -> dict | None:
         return {
             vol.Required("trigger_phrase"): cv.string,
             vol.Required("actions"): vol.All(cv.ensure_list, [dict]),
         }
-
-    def _is_window_device(self, device: dict) -> bool:
-        """Check if a device is a window device by name or domain."""
-        name = device.get("name", "") or ""
-        domains = device.get("domains", [])
-
-        if any(kw in name for kw in self.WINDOW_EXCLUDE_KEYWORDS):
-            return False
-        if any(kw in name for kw in self.WINDOW_KEYWORDS):
-            return True
-
-        window_domains = {"button", "window", "windows"}
-        if isinstance(domains, list) and any(d in window_domains for d in domains):
-            return True
-        return False
-
-    def _split_actions_by_device(self, actions: list[dict]) -> list[dict]:
-        """Split actions containing mixed devices into separate actions.
-
-        Example: TurnDeviceOn [筒灯, 平推窗] -> TurnDeviceOn [筒灯] + ControlWindow [平推窗]
-        """
-        if not actions:
-            return actions
-
-        split_actions = []
-        for action in actions:
-            intent_name = action.get("name") or action.get("intent", "")
-            params = action.get("parameters") or action.get("params", {})
-            targets = params.get("target", [])
-
-            if not isinstance(targets, list):
-                targets = [targets] if isinstance(targets, dict) else []
-                params["target"] = targets
-
-            normal_targets = []
-            window_targets = []
-
-            for target in targets:
-                if not isinstance(target, dict):
-                    continue
-                devices = target.get("devices", [])
-                if not isinstance(devices, list):
-                    devices = [devices] if isinstance(devices, dict) else []
-                    target["devices"] = devices
-
-                normal_devices = []
-                window_devices = []
-
-                for device in devices:
-                    if not isinstance(device, dict):
-                        continue
-                    if self._is_window_device(device):
-                        window_devices.append(device)
-                    else:
-                        normal_devices.append(device)
-
-                if normal_devices:
-                    normal_targets.append({**target, "devices": normal_devices})
-                if window_devices:
-                    window_targets.append({**target, "devices": window_devices})
-
-            if normal_targets:
-                split_actions.append({
-                    "name": intent_name,
-                    "parameters": {**params, "target": normal_targets}
-                })
-
-            if window_targets:
-                action_mapping = {
-                    "TurnDeviceOn": "ControlWindow",
-                    "TurnDeviceOff": "ControlWindow",
-                }
-                window_intent = action_mapping.get(intent_name, intent_name)
-                window_action = "open" if intent_name == "TurnDeviceOn" else "close"
-                split_actions.append({
-                    "name": window_intent,
-                    "parameters": {"target": window_targets, "action": window_action}
-                })
-
-        _LOGGER.info(f"拆分actions: {len(actions)} -> {len(split_actions)}")
-        return split_actions
 
     async def _auto_supplement_windows(
         self, hass: HomeAssistant, actions: list[dict]
@@ -288,7 +205,7 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
             if entity_entry.domain != "button":
                 continue
             name = (entity_entry.name or entity_entry.original_name or "").lower()
-            if not any(kw in name for kw in self.WINDOW_KEYWORDS):
+            if not any(kw in name for kw in WINDOW_KEYWORDS):
                 continue
             if entity_entry.area_id:
                 area_entry = area_reg.async_get_area(entity_entry.area_id)
@@ -382,7 +299,7 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
         if not actions:
             return {"success": False, "error": "动作列表不能为空"}
 
-        split_actions = self._split_actions_by_device(actions)
+        split_actions = split_actions_by_device(actions)
         _LOGGER.info(f"HassCreateVoiceScene split_actions={split_actions}")
 
         supplemented = await self._auto_supplement_windows(intent_obj.hass, split_actions)
