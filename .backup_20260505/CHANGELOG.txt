@@ -1,0 +1,28 @@
+== 修改记录 ==
+日期: 2026-05-05
+
+备份位置: .backup_20260505/
+
+== 修改内容 ==
+
+1. intent_window_const.py (新增)
+   - 提取 WINDOW_NAME_MAPPING, WINDOW_ACTION_MAPPING, REMOVE_KEYWORDS
+   - 提取辅助函数: _normalize_text, _extract_window_name, _find_action_in_text, _is_remove_button, _find_window_buttons
+
+2. intent_window_control.py (修改)
+   - 删除内联常量，改为 import from .intent_window_const
+   - 删除内联辅助函数，改为 import
+
+3. intent_turn.py (修改)
+   - 修复 _run_then_background 超时控制: asyncio.wait 不会抛异常，改为检查 pending 返回值
+   - 统一为 asyncio.TimeoutError
+
+4. intent_voice_scene.py (修改)
+   - 使用公共窗户常量 intent_window_const
+   - 重构场景执行: 删除 _execute_turn_device, _execute_control_window, _execute_adjust_attribute, _execute_set_mode
+   - 改用 intent.async_handle 调用原始 IntentHandler
+   - 统一 action 字段: split/存储/读取全用 intent + params
+   - 动作失败隔离保持不变
+
+== 恢复方法 ==
+copy .backup_20260505\* custom_components\huijian_ai\
