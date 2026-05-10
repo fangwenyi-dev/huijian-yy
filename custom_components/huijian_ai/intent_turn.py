@@ -178,6 +178,79 @@ class TurnDeviceIntentBase(intent.IntentHandler):
                 )
             return
 
+        if state.domain == "alarm_control_panel":
+            if service == SERVICE_TURN_ON:
+                service_name = "alarm_arm_away"
+            else:
+                service_name = "alarm_disarm"
+            await self._run_then_background(
+                hass.async_create_task(
+                    hass.services.async_call(
+                        "alarm_control_panel",
+                        service_name,
+                        {ATTR_ENTITY_ID: state.entity_id},
+                        context=intent_obj.context,
+                        blocking=True,
+                    )
+                )
+            )
+            return
+
+        if state.domain == "vacuum":
+            if service == SERVICE_TURN_ON:
+                service_name = "start"
+            else:
+                service_name = "return_to_base"
+            await self._run_then_background(
+                hass.async_create_task(
+                    hass.services.async_call(
+                        "vacuum",
+                        service_name,
+                        {ATTR_ENTITY_ID: state.entity_id},
+                        context=intent_obj.context,
+                        blocking=True,
+                    )
+                )
+            )
+            return
+
+        if state.domain == "water_heater":
+            if not hass.services.has_service("water_heater", "set_operation_mode"):
+                raise intent.IntentHandleError(
+                    f"Water heater entity {state.entity_id} does not support set_operation_mode"
+                )
+            if service == SERVICE_TURN_ON:
+                modes = state.attributes.get("operation_modes", [])
+                target_mode = next((m for m in modes if m != "off"), None)
+                if not target_mode:
+                    raise intent.IntentHandleError(
+                        f"Water heater entity {state.entity_id} has no available operation mode"
+                    )
+                await self._run_then_background(
+                    hass.async_create_task(
+                        hass.services.async_call(
+                            "water_heater",
+                            "set_operation_mode",
+                            {ATTR_ENTITY_ID: state.entity_id, "operation_mode": target_mode},
+                            context=intent_obj.context,
+                            blocking=True,
+                        )
+                    )
+                )
+            else:
+                await self._run_then_background(
+                    hass.async_create_task(
+                        hass.services.async_call(
+                            "water_heater",
+                            "set_operation_mode",
+                            {ATTR_ENTITY_ID: state.entity_id, "operation_mode": "off"},
+                            context=intent_obj.context,
+                            blocking=True,
+                        )
+                    )
+                )
+            return
+
         if not hass.services.has_service(state.domain, service):
             raise intent.IntentHandleError(
                 f"Service {service} does not support entity {state.entity_id}"
