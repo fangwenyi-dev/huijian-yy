@@ -28,7 +28,8 @@ async def _resolve_entity_id(
     """解析传感器的正确 entity_id。
 
     如果 LLM 传入的 entity_id 不存在，自动搜索 HA 中匹配的传感器。
-    支持 temperature / humidity / 其他传感器类型的自动修正。
+    支持 temperature / humidity / motion / CO2 / 等传感器类型的自动修正。
+    支持中文友好名称匹配 + binary_sensor 搜索。
     返回 (resolved_entity_id, warning_message)。
     """
     entity_id = (trigger.get("entity_id", "") or "").strip().lower()
@@ -41,20 +42,65 @@ async def _resolve_entity_id(
 
     _LOGGER.info(f"Entity '{entity_id}' not found, searching for matching sensor...")
 
-    # 从 entity_id 名称推断传感器类型
-    raw_entity_id = entity_id.replace("sensor.", "").lower()
-    search_parts = [p for p in raw_entity_id.replace("_", " ").replace(".", " ").split() if len(p) > 2]
+    raw_entity_id = entity_id.replace("sensor.", "").replace("binary_sensor.", "").lower()
+    search_parts = [p for p in raw_entity_id.replace("_", " ").replace(".", " ").split() if len(p) > 1]
 
-    # device_class 推断映射
+    friendly_keywords = []
+    for part in search_parts:
+        kw_map = {
+            "temperature": "温度", "temp": "温度",
+            "humidity": "湿度", "humi": "湿度",
+            "illuminance": "光照", "light": "光照", "illumi": "光照",
+            "pressure": "气压",
+            "power": "功率",
+            "energy": "用电",
+            "current": "电流",
+            "voltage": "电压",
+            "motion": "运动",
+            "door": "门窗",
+            "window": "窗户",
+            "presence": "存在",
+            "co2": "二氧化碳",
+            "pm25": "pm2.5",
+            "battery": "电池",
+            "office": "办公",
+            "bedroom": "卧室",
+            "living": "客厅",
+            "kitchen": "厨房",
+            "balcony": "阳台",
+            "bathroom": "卫生间",
+        }
+        if part in kw_map:
+            friendly_keywords.append(kw_map[part])
+        else:
+            friendly_keywords.append(part)
+
+    friendly_keywords = list(set(friendly_keywords))
+
     device_class_hints = {
         "temperature": ["temperature", "temp", "温度"],
         "humidity": ["humidity", "humi", "湿度"],
         "illuminance": ["illuminance", "illumi", "light", "光照", "亮度"],
         "pressure": ["pressure", "气压"],
         "power": ["power", "功率", "电量"],
-        "energy": ["energy", "energy", "用电"],
+        "energy": ["energy", "用电"],
         "current": ["current", "电流"],
         "voltage": ["voltage", "电压"],
+        "carbon_dioxide": ["co2", "carbon_dioxide", "二氧化碳"],
+        "pm25": ["pm25", "pm2.5", "pm_2_5"],
+        "pm10": ["pm10"],
+        "voc": ["voc", "tvoc"],
+        "nitrogen_dioxide": ["no2", "nitrogen_dioxide"],
+        "battery": ["battery", "电池"],
+        "moisture": ["moisture", "水分"],
+        "signal_strength": ["signal", "rssi", "信号"],
+        "motion": ["motion", "运动", "人体", "移动"],
+        "door": ["door", "门", "门窗"],
+        "window": ["window", "窗", "窗户"],
+        "presence": ["presence", "存在", "有人"],
+        "gas": ["gas", "燃气", "煤气"],
+        "smoke": ["smoke", "烟感", "烟雾"],
+        "carbon_monoxide": ["co", "carbon_monoxide", "一氧化碳"],
     }
 
     guessed_classes = []
@@ -67,30 +113,38 @@ async def _resolve_entity_id(
 
     _LOGGER.info(f"Guessed device classes from '{raw_entity_id}': {guessed_classes}")
 
-    # 按 device_class 搜索
+    def _name_matches(s, parts):
+        name_lower = (s.attributes.get("friendly_name", "") or "").lower()
+        eid_lower = s.entity_id.lower()
+        for part in parts:
+            if part in eid_lower or part in name_lower:
+                return True
+        return False
+
+    all_states = list(hass.states.async_all())
+
     matched_by_class = []
-    for s in hass.states.async_all():
-        if s.domain != "sensor":
+    seen_ids = set()
+    for s in all_states:
+        if s.domain not in ("sensor", "binary_sensor"):
             continue
         dc = s.attributes.get("device_class", "")
         if not dc:
             continue
         if guessed_classes and dc in guessed_classes:
-            matched_by_class.append(s)
+            eid = s.entity_id
+            if eid not in seen_ids:
+                seen_ids.add(eid)
+                matched_by_class.append(s)
 
     _LOGGER.info(f"Sensors matched by device_class {guessed_classes}: {[s.entity_id for s in matched_by_class]}")
 
-    # 按名称搜索：friendly_name 或 entity_id 中匹配关键词
     matched_by_name = []
     for s in matched_by_class:
-        name_lower = (s.attributes.get("friendly_name", "") or "").lower()
-        eid_lower = s.entity_id.lower()
-        for part in search_parts:
-            if part in name_lower or part in eid_lower:
-                matched_by_name.append(s)
-                break
+        if _name_matches(s, search_parts + friendly_keywords):
+            matched_by_name.append(s)
 
-    _LOGGER.info(f"Name-matched candidates from type-matched sensors: {[s.entity_id for s in matched_by_name]}")
+    _LOGGER.info(f"Name-matched candidates: {[s.entity_id for s in matched_by_name]}")
 
     if len(matched_by_name) == 1:
         resolved = matched_by_name[0].entity_id
@@ -103,17 +157,16 @@ async def _resolve_entity_id(
         resolved = matched_by_class[0].entity_id
         return resolved, f"已将传感器修正为：{matched_by_class[0].attributes.get('friendly_name', resolved)}"
 
-    # 兜底：在所有传感器中按名称搜索
     all_candidates = []
-    for s in hass.states.async_all():
-        if s.domain != "sensor":
+    seen_ids = set()
+    for s in all_states:
+        if s.domain not in ("sensor", "binary_sensor"):
             continue
-        name_lower = (s.attributes.get("friendly_name", "") or "").lower()
-        eid_lower = s.entity_id.lower()
-        for part in search_parts:
-            if part in name_lower or part in eid_lower:
+        if _name_matches(s, search_parts + friendly_keywords):
+            eid = s.entity_id
+            if eid not in seen_ids:
+                seen_ids.add(eid)
                 all_candidates.append(s)
-                break
 
     _LOGGER.info(f"All-sensor candidates: {[s.entity_id for s in all_candidates]}")
 
@@ -227,6 +280,23 @@ class AutomationManager:
         self._unsub = None
         self._triggered_cache: dict[str, float] = {}
         self._debounce_seconds = DEBOUNCE_MINUTES * 60
+        self._trigger_logs: list[dict] = []
+        self._max_logs = 200
+
+    @property
+    def trigger_logs(self) -> list[dict]:
+        return list(self._trigger_logs)
+
+    def _add_trigger_log(self, automation_id: str, entity_id: str, value: str, reason: str):
+        self._trigger_logs.append({
+            "automation_id": automation_id,
+            "entity_id": entity_id,
+            "value": value,
+            "reason": reason,
+            "triggered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        if len(self._trigger_logs) > self._max_logs:
+            self._trigger_logs = self._trigger_logs[-self._max_logs:]
 
     async def async_start(self):
         _LOGGER.info("AutomationManager starting...")
@@ -298,6 +368,7 @@ class AutomationManager:
 
                     self._triggered_cache[automation_id] = now
                     _LOGGER.info(f"Automation triggered: {automation_id} ({entity_id}={value})")
+                    self._add_trigger_log(automation_id, entity_id, state_str, f"条件满足({above}/{below})")
                     await self._execute_actions(automation.get("actions", []))
                 except Exception as e:
                     _LOGGER.error(f"Error checking automation {automation.get('automation_id', 'unknown')}: {e}")
@@ -339,6 +410,7 @@ class AutomationManager:
         now = datetime.now().timestamp()
         self._triggered_cache[automation_id] = now
         _LOGGER.info(f"Automation triggered (initial check): {automation_id} ({entity_id}={value})")
+        self._add_trigger_log(automation_id, entity_id, state.state, f"初始检查条件满足({above}/{below})")
         await self._execute_actions(actions)
 
     async def _execute_actions(self, actions: list[dict]):
