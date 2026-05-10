@@ -8,7 +8,9 @@ from homeassistant.helpers.http import HomeAssistantView, KEY_HASS
 from homeassistant.helpers import entity_registry as er
 
 from .intent_voice_scene import get_voice_scene_store
-from .intent_automation import get_automation_store
+from .intent_automation import get_automation_store, get_automation_manager
+from .const import DOMAIN
+from homeassistant.helpers import intent as ha_intent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,6 +23,9 @@ async def async_setup_api(hass: HomeAssistant):
     hass.http.register_view(AutomationDeleteView)
     hass.http.register_view(AutomationsManageView)
     hass.http.register_view(CombinedManageView)
+    hass.http.register_view(AutomationLogView)
+    hass.http.register_view(TestSceneView)
+    hass.http.register_view(TestAutomationView)
 
 
 def _extract_device_info(action: dict) -> str:
@@ -167,6 +172,71 @@ class VoiceSceneDeleteView(HomeAssistantView):
             }, 500)
 
 
+class AutomationLogView(HomeAssistantView):
+    requires_auth = False
+    url = "/api/huijian-ai/automation-logs"
+    name = "api:huijian-ai:automation-logs"
+
+    async def get(self, request: web.Request):
+        hass = request.app[KEY_HASS]
+        mgr = get_automation_manager(hass)
+        return self.json(mgr.trigger_logs)
+
+
+class TestSceneView(HomeAssistantView):
+    requires_auth = False
+    url = "/api/huijian-ai/test-scene"
+    name = "api:huijian-ai:test-scene"
+
+    async def post(self, request: web.Request):
+        try:
+            body = await request.json()
+        except Exception:
+            return self.json({"error": "Invalid JSON"}, status_code=400)
+        trigger_phrase = (body.get("trigger_phrase", "") or "").strip()
+        if not trigger_phrase:
+            return self.json({"error": "trigger_phrase is required"}, status_code=400)
+        try:
+            result = await ha_intent.async_handle(
+                request.app[KEY_HASS], DOMAIN, "HassTriggerVoiceScene",
+                slots={"trigger_phrase": {"value": trigger_phrase}},
+            )
+            return self.json({"success": True, "result": str(result)})
+        except Exception as e:
+            return self.json({"error": str(e)}, status_code=500)
+
+
+class TestAutomationView(HomeAssistantView):
+    requires_auth = False
+    url = "/api/huijian-ai/test-automation"
+    name = "api:huijian-ai:test-automation"
+
+    async def post(self, request: web.Request):
+        try:
+            body = await request.json()
+        except Exception:
+            return self.json({"error": "Invalid JSON"}, status_code=400)
+        automation_id = (body.get("automation_id", "") or "").strip()
+        if not automation_id:
+            return self.json({"error": "automation_id is required"}, status_code=400)
+        try:
+            store = get_automation_store(request.app[KEY_HASS])
+            automations = await store.get_all_automations()
+            automation = None
+            for a in automations:
+                if a.get("automation_id") == automation_id:
+                    automation = a
+                    break
+            if not automation:
+                return self.json({"error": "Automation not found"}, status_code=404)
+            mgr = get_automation_manager(request.app[KEY_HASS])
+            await mgr._execute_actions(automation.get("actions", []))
+            mgr._add_trigger_log(automation_id, "", "test", "手动测试触发")
+            return self.json({"success": True})
+        except Exception as e:
+            return self.json({"error": str(e)}, status_code=500)
+
+
 class CombinedManageView(HomeAssistantView):
     requires_auth = False
     url = "/api/huijian-ai/manage-page"
@@ -209,6 +279,7 @@ class CombinedManageView(HomeAssistantView):
         <div>
             <button class="delete-btn" onclick="deleteScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">删除</button>
             <button class="edit-btn" onclick="openEditScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">编辑</button>
+            <button class="test-btn" onclick="testScene('{html_mod.escape(trigger.replace("'", "\\'"))}')">测试</button>
         </div>
     </div>
     <div class="info">创建时间: {created_display}</div>
@@ -262,6 +333,7 @@ class CombinedManageView(HomeAssistantView):
         <div><span class="card-trigger auto">{html_mod.escape(trigger_display)}</span><span class="card-tag auto">传感器自动化</span></div>
         <button class="delete-btn" onclick="deleteAutomation('{auto_id}', '{html_mod.escape(trigger_display.replace("'", "\\'"))}')">删除</button>
         <button class="edit-btn" onclick="openEditAuto('{auto_id}', '{html_mod.escape(trigger_entity.replace("'", "\\'"))}', '{above}', '{below if below is not None else ""}')">编辑</button>
+        <button class="test-btn" onclick="testAutomation('{auto_id}')">测试</button>
     </div>
     <div class="info">创建时间: {created_display}{trigger_info}</div>
     <div class="actions-box">
@@ -337,6 +409,19 @@ class CombinedManageView(HomeAssistantView):
         .unauth-box p {{ font-size: 14px; color: #999; margin-bottom: 20px; }}
         .login-btn {{ display: inline-block; background: #03a9f4; color: white; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-size: 16px; }}
         .login-btn:hover {{ background: #0288d1; }}
+        .test-btn {{ background: #00897b; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-left: 8px; }}
+        .test-btn:hover {{ background: #00695c; }}
+        .test-btn:disabled {{ background: #ccc; cursor: not-allowed; }}
+        .log-section {{ margin-top: 24px; border-top: 2px solid #e0e0e0; padding-top: 16px; }}
+        .log-header {{ font-size: 16px; font-weight: 600; color: #555; cursor: pointer; user-select: none; padding: 8px 0; }}
+        .log-header:hover {{ color: #03a9f4; }}
+        .log-content {{ max-height: 400px; overflow-y: auto; font-size: 13px; }}
+        .log-table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
+        .log-table th {{ background: #f5f5f5; padding: 6px 8px; text-align: left; font-weight: 600; color: #555; font-size: 12px; border-bottom: 2px solid #e0e0e0; }}
+        .log-table td {{ padding: 6px 8px; border-bottom: 1px solid #eee; color: #666; font-size: 12px; }}
+        .log-table tr:hover td {{ background: #fafafa; }}
+        .log-empty {{ color: #999; padding: 16px; text-align: center; font-size: 14px; }}
+        .log-badge {{ display: inline-block; background: #e0f2f1; color: #00695c; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-left: 8px; }}
     </style>
 </head>
 <body>
@@ -344,6 +429,16 @@ class CombinedManageView(HomeAssistantView):
         <h1>智能场景</h1>
         <div class="subtitle">语音场景 + 传感器自动化 统一管理</div>
         <div id="content">{content_html}</div>
+        <div class="log-section">
+            <div class="log-header" onclick="toggleLogs()">&#9654; 触发日志 <span class="log-badge" id="logCount">0</span></div>
+            <div id="logContent" class="log-content" style="display:none;">
+                <div class="log-empty" id="logEmpty">暂无触发记录</div>
+                <table class="log-table" id="logTable" style="display:none;">
+                    <thead><tr><th>时间</th><th>自动化ID</th><th>传感器</th><th>值</th><th>原因</th></tr></thead>
+                    <tbody id="logBody"></tbody>
+                </table>
+            </div>
+        </div>
     </div>
     <div class="toast" id="toast"></div>
 
@@ -483,6 +578,106 @@ class CombinedManageView(HomeAssistantView):
         function closeAutoEdit() {{
             document.getElementById('editAutoModal').style.display = 'none';
         }}
+
+        /* Test & log functions */
+        function escapeHtml(text) {{
+            if (!text) return '';
+            return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }}
+
+        async function testScene(triggerPhrase) {{
+            if (!confirm('测试语音场景: "' + triggerPhrase + '"?')) return;
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '测试中...';
+            try {{
+                const res = await fetch('/api/huijian-ai/test-scene', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ trigger_phrase: triggerPhrase }})
+                }});
+                const data = await res.json();
+                if (data.success) {{
+                    showToast('测试成功', 'success');
+                }} else {{
+                    throw new Error(data.error || '测试失败');
+                }}
+            }} catch (e) {{
+                showToast(e.message || '网络错误', 'error');
+            }}
+            btn.disabled = false;
+            btn.textContent = '测试';
+        }}
+
+        async function testAutomation(autoId) {{
+            if (!confirm('测试触发此自动化?')) return;
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '测试中...';
+            try {{
+                const res = await fetch('/api/huijian-ai/test-automation', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ automation_id: autoId }})
+                }});
+                const data = await res.json();
+                if (data.success) {{
+                    showToast('测试成功，动作已执行', 'success');
+                    fetchLogs();
+                }} else {{
+                    throw new Error(data.error || '测试失败');
+                }}
+            }} catch (e) {{
+                showToast(e.message || '网络错误', 'error');
+            }}
+            btn.disabled = false;
+            btn.textContent = '测试';
+        }}
+
+        async function fetchLogs() {{
+            try {{
+                const res = await fetch('/api/huijian-ai/automation-logs');
+                const logs = await res.json();
+                const tbody = document.getElementById('logBody');
+                const empty = document.getElementById('logEmpty');
+                const table = document.getElementById('logTable');
+                const count = document.getElementById('logCount');
+                if (!logs || logs.length === 0) {{
+                    empty.style.display = 'block';
+                    table.style.display = 'none';
+                    count.textContent = '0';
+                    return;
+                }}
+                empty.style.display = 'none';
+                table.style.display = '';
+                count.textContent = logs.length;
+                tbody.innerHTML = logs.slice(0, 100).map(function(log) {{
+                    return '<tr><td>' + escapeHtml(log.triggered_at || '') + '</td><td>' + escapeHtml(log.automation_id || '') + '</td><td>' + escapeHtml(log.entity_id || '') + '</td><td>' + escapeHtml(log.value || '') + '</td><td>' + escapeHtml(log.reason || '') + '</td></tr>';
+                }}).join('');
+            }} catch (e) {{
+                console.error('Failed to fetch logs:', e);
+            }}
+        }}
+
+        function toggleLogs() {{
+            const content = document.getElementById('logContent');
+            const header = document.querySelector('.log-header');
+            if (content.style.display === 'none') {{
+                content.style.display = 'block';
+                header.innerHTML = '&#9660; 触发日志 <span class="log-badge" id="logCount">' + (document.getElementById('logCount').textContent || '0') + '</span>';
+                fetchLogs();
+            }} else {{
+                content.style.display = 'none';
+                header.innerHTML = '&#9654; 触发日志 <span class="log-badge" id="logCount">' + (document.getElementById('logCount').textContent || '0') + '</span>';
+            }}
+        }}
+
+        setInterval(function() {{
+            const content = document.getElementById('logContent');
+            if (content && content.style.display !== 'none') {{
+                fetchLogs();
+            }}
+        }}, 10000);
 
         window.onclick = function(e) {{
             if (e.target === document.getElementById('editModal')) closeEdit();
