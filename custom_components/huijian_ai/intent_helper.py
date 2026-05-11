@@ -17,6 +17,16 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN_ALIASES = {
     "window": "cover",
     "windows": "cover",
+    "curtain": "cover",
+    "curtains": "cover",
+    "blind": "cover",
+    "blinds": "cover",
+    "shutter": "cover",
+    "shutters": "cover",
+    "plug": "switch",
+    "plugs": "switch",
+    "outlet": "switch",
+    "outlets": "switch",
 }
 
 
@@ -206,6 +216,67 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
                 entity_info = EntityInfo(name=entity_name, area=entity_area, state=state, entity=entity_entry, on_off=on_off)
                 _LOGGER.info(f"Fallback match intent available target: {entity_info}")
                 candidate_entities.append(entity_info)
+
+    if len(candidate_entities) == 0:
+        _LOGGER.info("Fallback also failed, trying device_class-based matching...")
+
+        device_class_hints = set()
+        for target in targets:
+            for device in target["devices"]:
+                for d in device["domains"]:
+                    if d not in DOMAIN_ALIASES.values():
+                        device_class_hints.add(d)
+
+        if device_class_hints:
+            _LOGGER.info(f"Device class hints: {device_class_hints}")
+            SKIP_DOMAINS = {"sensor", "binary_sensor", "button", "input_button"}
+            seen_ids = set()
+
+            for state in hass.states.async_all():
+                if state.state == "unavailable":
+                    continue
+                if state.domain in SKIP_DOMAINS:
+                    continue
+                if state.entity_id in seen_ids:
+                    continue
+
+                dc = state.attributes.get("device_class", "")
+                if not dc or dc not in device_class_hints:
+                    continue
+
+                entity_registry = er.async_get(hass)
+                entity_entry = entity_registry.async_get(state.entity_id)
+                if not entity_entry:
+                    continue
+
+                for target in targets:
+                    found_match = False
+                    for device in target["devices"]:
+                        area_name = target.get("area")
+                        name = device.get("name")
+
+                        if name:
+                            friendly = (state.attributes.get("friendly_name", "") or "").lower()
+                            eid_lower = state.entity_id.lower()
+                            name_lower = name.lower()
+                            if name_lower not in friendly and name_lower not in eid_lower:
+                                continue
+
+                        entity_area = get_entity_area(hass, entity_entry)
+                        if area_name and entity_area:
+                            if area_name.lower() != entity_area.name.lower():
+                                continue
+
+                        entity_name_val = get_entity_name(entity_entry, state)
+                        on_off = "off" if state.state == "off" else "on"
+                        entity_info = EntityInfo(name=entity_name_val, area=entity_area, state=state, entity=entity_entry, on_off=on_off)
+                        _LOGGER.info(f"Device-class match found: {entity_info}")
+                        candidate_entities.append(entity_info)
+                        seen_ids.add(state.entity_id)
+                        found_match = True
+                        break
+                    if found_match:
+                        break
 
     if len(candidate_entities) == 0:
         return {
