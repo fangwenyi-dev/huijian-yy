@@ -12,6 +12,24 @@ from homeassistant.helpers import intent
 
 _LOGGER = logging.getLogger(__name__)
 
+# Domain aliases: LLM 可能使用非标准域名，映射到 HA 实际域名
+# 例如 LLM 传 "window" 但 HA 中窗户是 cover 域 + device_class='window'
+DOMAIN_ALIASES = {
+    "window": "cover",
+    "windows": "cover",
+}
+
+
+def _expand_domains(domains: list[str]) -> list[str]:
+    """Expand domains with known aliases (e.g. 'window' -> 'cover')."""
+    expanded = list(domains)
+    for d in domains:
+        alias = DOMAIN_ALIASES.get(d)
+        if alias and alias not in expanded:
+            expanded.append(alias)
+    return expanded
+
+
 def target_paramter_type():
     return vol.All(cv.ensure_list, [vol.Schema({
             vol.Optional("devices"): vol.All(cv.ensure_list, [vol.Schema({
@@ -106,7 +124,7 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
             match_constraints = intent.MatchTargetsConstraints(
                 name=device.get("name"),
                 area_name=area_name,
-                domains=device["domains"],
+                domains=_expand_domains(device["domains"]),
                 assistant=intent_obj.assistant,
                 single_target=False,
                 allow_duplicate_names=True,
@@ -153,7 +171,7 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
                 match_constraints = intent.MatchTargetsConstraints(
                     name=device.get("name"),
                     area_name=area_name,
-                    domains=device["domains"],
+                    domains=_expand_domains(device["domains"]),
                     assistant=None,
                     single_target=False,
                     allow_duplicate_names=True,
