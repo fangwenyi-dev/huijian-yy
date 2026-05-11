@@ -13,7 +13,8 @@ from homeassistant.components.valve.const import DOMAIN as VALVE_DOMAIN
 from homeassistant.const import (ATTR_ENTITY_ID, SERVICE_CLOSE_COVER,
                                  SERVICE_CLOSE_VALVE, SERVICE_LOCK,
                                  SERVICE_OPEN_COVER, SERVICE_OPEN_VALVE,
-                                 SERVICE_TURN_ON, SERVICE_UNLOCK)
+                                 SERVICE_TURN_OFF, SERVICE_TURN_ON,
+                                 SERVICE_UNLOCK)
 from homeassistant.core import State
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
