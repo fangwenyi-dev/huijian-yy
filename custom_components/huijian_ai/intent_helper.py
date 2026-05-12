@@ -12,9 +12,9 @@ from homeassistant.helpers import intent
 
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN_ALIASES = {
-    "window": "cover",
-    "windows": "cover",
+DOMAIN_ALIASES: dict[str, str | list[str]] = {
+    "window": ["cover", "button"],
+    "windows": ["cover", "button"],
     "curtain": "cover",
     "curtains": "cover",
     "blind": "cover",
@@ -32,8 +32,11 @@ def _expand_domains(domains: list[str]) -> list[str]:
     expanded = list(domains)
     for d in domains:
         alias = DOMAIN_ALIASES.get(d)
-        if alias and alias not in expanded:
-            expanded.append(alias)
+        if alias:
+            aliases = alias if isinstance(alias, list) else [alias]
+            for a in aliases:
+                if a not in expanded:
+                    expanded.append(a)
     return expanded
 
 

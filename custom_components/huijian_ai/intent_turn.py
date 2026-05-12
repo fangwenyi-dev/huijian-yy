@@ -21,7 +21,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
-from .intent_helper import HaTargetItem, match_intent_entities, target_paramter_type
+from .intent_helper import EntityInfo, HaTargetItem, match_intent_entities, target_paramter_type
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +36,13 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         if error_msg:
             return error_msg
         assert candidate_entities
-        
+
+        # Filter button entities for correct action matching.
+        # TurnDeviceOn → only press "开"/"open" buttons;
+        # TurnDeviceOff → only press "关"/"close" buttons.
+        # "内倒" (tilt) buttons are always excluded — use ControlWindow instead.
+        candidate_entities = self._filter_button_entities(candidate_entities, service)
+
         # Execute operation.
         control_targets = []
         entity_key_map = set() # for deduplication
@@ -57,11 +63,6 @@ class TurnDeviceIntentBase(intent.IntentHandler):
     async def handle_match_target(self, intent_obj: intent.Intent, state: State, service: str):
         hass = intent_obj.hass
         if state.domain in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
-            if service != SERVICE_TURN_ON:
-                raise intent.IntentHandleError(
-                    f"Entity {state.entity_id} cannot be turned off"
-                )
-
             await self._run_then_background(
                 hass.async_create_task(
                     hass.services.async_call(
@@ -289,14 +290,74 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             task.cancel()
             await asyncio.wait({task}, timeout=5)
             raise
-        
+
+    @staticmethod
+    def _get_button_base_name(name: str) -> str:
+        name_lower = name.lower()
+        action_keywords = ["开", "关", "内倒", "open", "close", "停止", "stop", "pause"]
+        for kw in action_keywords:
+            if name_lower.endswith(f" {kw}"):
+                return name[:-(len(kw) + 1)]
+        return name
+
+    @staticmethod
+    def _button_matches_action(name: str, keywords: list[str]) -> bool:
+        name_lower = name.lower()
+        for kw in keywords:
+            if name_lower.endswith(f" {kw}") or name_lower == kw:
+                return True
+        return False
+
+    def _filter_button_entities(self, entities: list[EntityInfo], service: str) -> list[EntityInfo]:
+        result: list[EntityInfo] = []
+        button_groups: dict[str, list[EntityInfo]] = {}
+
+        for item in entities:
+            if item.state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
+                result.append(item)
+                continue
+
+            name_lower = item.name.lower()
+            if "内倒" in name_lower:
+                _LOGGER.info("Skipping tilt button '%s' - use ControlWindow instead", item.name)
+                continue
+
+            base_name = self._get_button_base_name(item.name)
+            if base_name not in button_groups:
+                button_groups[base_name] = []
+            button_groups[base_name].append(item)
+
+        for base_name, group in button_groups.items():
+            if len(group) == 1:
+                result.append(group[0])
+            else:
+                if service == SERVICE_TURN_ON:
+                    preferred = next(
+                        (e for e in group if self._button_matches_action(e.name, ["开", "open"])),
+                        None
+                    )
+                else:
+                    preferred = next(
+                        (e for e in group if self._button_matches_action(e.name, ["关", "close"])),
+                        None
+                    )
+
+                if preferred:
+                    result.append(preferred)
+                else:
+                    result.extend(group)
+
+        return result
+
+
 class TurnDeviceOnIntent(TurnDeviceIntentBase):
     intent_type = "TurnDeviceOn"
     description = (
         "Turns on/opens/presses a device. "
         "Use for: turning on lights (e.g., 'turn on bedroom light', '打开卧室筒灯'), "
-        "opening covers/windows (e.g., 'open the window', '打开窗户'), "
-        "pressing buttons (e.g., 'press the scene button', '按场景按钮'). "
+        "pressing buttons (e.g., 'press the scene button', '按场景按钮'), "
+        "opening covers/curtains (e.g., 'open the curtain', '打开窗帘'). "
+        "For window open/close/tilt commands, use the ControlWindow intent instead. "
         "Target should include device name and area when specified, "
         "e.g., target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
     )
@@ -321,7 +382,8 @@ class TurnDeviceOffIntent(TurnDeviceIntentBase):
     description = (
         "Turns off/closes a device. "
         "Use for: turning off lights (e.g., 'turn off bedroom light', '关闭卧室筒灯'), "
-        "closing covers/windows (e.g., 'close the window', '关闭窗户'). "
+        "closing covers/curtains (e.g., 'close the curtain', '关闭窗帘'). "
+        "For window open/close/tilt commands, use the ControlWindow intent instead. "
         "Target should include device name and area when specified, "
         "e.g., target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
     )
