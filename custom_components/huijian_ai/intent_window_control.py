@@ -23,12 +23,14 @@ _LOGGER = logging.getLogger(__name__)
 class ControlWindowIntent(intent.IntentHandler):
     intent_type = "ControlWindow"
     description = (
-        "Control window devices through button presses. "
-        "Automatically maps user intentions to window opener buttons. "
-        "Use for: opening windows, closing windows, pausing windows, A mode. "
-        "Supported actions: open, close, pause, A. "
-        "Name mapping: '平推窗' -> '平推窗' buttons, '窗户' -> '窗户' buttons. "
-        "Example: '打开平推窗' -> finds and presses '平推窗 开启' button. "
+        "Control windows by pressing physical buttons. "
+        "TRIGGER when user says window-related commands containing action keywords. "
+        "Action keyword mapping: '开'/'开启'=open, '关'/'关闭'=close, "
+        "'暂停'/'停止'/'停'=pause, '内倒'/'内岛'=A (tilt mode). "
+        "Examples: '内岛展厅窗户' -> action='A', area='展厅', name='窗户'. "
+        "'打开平推窗' -> action='open', name='平推窗'. "
+        "'关闭卧室窗户' -> action='close', area='卧室', name='窗户'. "
+        "Valid window names: 平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户. "
         "Delete buttons are automatically excluded."
     )
     @property

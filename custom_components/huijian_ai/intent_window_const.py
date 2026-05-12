@@ -12,6 +12,8 @@ WINDOW_NAME_MAPPING = {
     "pingtui": "平推窗",
     "平开窗": "平开窗",
     "推拉窗": "推拉窗",
+    "内开窗": "内开窗",
+    "外开窗": "外开窗",
     "天窗": "天窗",
     "飘窗": "飘窗",
     "推拉门": "推拉门",
@@ -27,7 +29,7 @@ WINDOW_ACTION_MAPPING = {
     "open": ["开启", "开", "open"],
     "close": ["关闭", "关", "close"],
     "pause": ["暂停", "停止", "pause", "stop"],
-    "a": ["A", "a", "内倒"],
+    "a": ["A", "a", "内倒", "内岛"],
 }
 
 REMOVE_KEYWORDS = ["删除", "remove", "shan_chu", "shanchu", "delete"]
@@ -52,11 +54,51 @@ def extract_window_name(name: str) -> str | None:
     return None
 
 
+def _find_standalone_keyword(name_lower: str, keyword_lower: str) -> int | None:
+    """Find a keyword as a standalone word (not part of another word) in a string.
+    
+    Searches ALL occurrences of keyword and returns the first one that passes
+    the boundary check (surrounded by spaces or string boundaries).
+    This is needed because window names like '内开内倒窗' contain substrings
+    like '内倒' and '开' that are also action keywords.
+    """
+    pos = 0
+    while True:
+        idx = name_lower.find(keyword_lower, pos)
+        if idx == -1:
+            return None
+        after_idx = idx + len(keyword_lower)
+        after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
+        before_char = name_lower[idx - 1] if idx > 0 else ' '
+        if after_char.strip() == '' and before_char.strip() == '':
+            return idx
+        pos = idx + 1
+
+
+def _strip_window_names(text_lower: str) -> str:
+    """Remove known window names from text to avoid action keyword conflicts.
+    
+    e.g. '内开内倒窗' contains '开' (open keyword) and '内倒' (tilt keyword),
+    which would interfere with action detection.
+    """
+    remaining = text_lower
+    for wname in sorted(WINDOW_NAME_MAPPING.values(), key=len, reverse=True):
+        remaining = remaining.replace(wname.lower(), "")
+    return remaining
+
+
 def find_action_in_text(text: str) -> str | None:
     text_lower = text.lower()
+    # Strip window names first to avoid conflicts:
+    # e.g. "内开内倒窗" contains "开" (would match "open") and "内倒" (would match "a")
+    cleaned = _strip_window_names(text_lower)
+    remaining = cleaned.strip()
+    if not remaining:
+        # Text is entirely window names with no action keywords present
+        return None
     for action, keywords in WINDOW_ACTION_MAPPING.items():
         for keyword in keywords:
-            if keyword.lower() in text_lower:
+            if keyword.lower() in remaining:
                 return action
     return None
 
@@ -92,6 +134,14 @@ def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[s
     skip_area_count = 0
     skip_remove_count = 0
 
+    # Build set of longer window names that contain this window_name as substring
+    # Prevents matching e.g. "内开内倒窗" buttons when searching for "内开窗"
+    window_name_lower = window_name.lower()
+    _conflicting_longer_names = {
+        wn for wn in set(WINDOW_NAME_MAPPING.values())
+        if len(wn) > len(window_name) and window_name_lower in wn.lower()
+    }
+
     for state in hass.states.async_all():
         if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
             continue
@@ -101,7 +151,9 @@ def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[s
         entity_id = state.entity_id
         name_lower = name.lower()
 
-        if window_name.lower() not in name_lower:
+        if window_name_lower not in name_lower:
+            continue
+        if any(ln.lower() in name_lower for ln in _conflicting_longer_names):
             continue
 
         match_count += 1
@@ -121,16 +173,11 @@ def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[s
         for action, keywords in WINDOW_ACTION_MAPPING.items():
             for keyword in keywords:
                 keyword_lower = keyword.lower()
-                if keyword_lower in name_lower:
-                    idx = name_lower.find(keyword_lower)
-                    after_idx = idx + len(keyword_lower)
-                    after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
-                    before_char = name_lower[idx - 1] if idx > 0 else ' '
-                    if after_char.strip() == '' and before_char.strip() == '':
-                        if action not in result:
-                            result[action] = entity_id
-                            _LOGGER.info(f"Found {action} button: {entity_id} (name: {name})")
-                        break
+                if _find_standalone_keyword(name_lower, keyword_lower) is not None:
+                    if action not in result:
+                        result[action] = entity_id
+                        _LOGGER.info(f"Found {action} button: {entity_id} (name: {name})")
+                    break
 
     _LOGGER.info(f"Search summary: total_buttons={button_count}, name_matches={match_count}, skipped_remove={skip_remove_count}, skipped_area={skip_area_count}, result={result}")
     return result
@@ -159,15 +206,10 @@ def find_window_buttons_by_area_id(hass, area_id: str | None) -> dict[str, str]:
         for action_key_kw, keywords in WINDOW_ACTION_MAPPING.items():
             for keyword in keywords:
                 keyword_lower = keyword.lower()
-                if keyword_lower in name_lower:
-                    idx = name_lower.find(keyword_lower)
-                    after_idx = idx + len(keyword_lower)
-                    after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
-                    before_char = name_lower[idx - 1] if idx > 0 else ' '
-                    if after_char.strip() == '' and before_char.strip() == '':
-                        if action_key_kw not in buttons:
-                            buttons[action_key_kw] = state.entity_id
-                        break
+                if _find_standalone_keyword(name_lower, keyword_lower) is not None:
+                    if action_key_kw not in buttons:
+                        buttons[action_key_kw] = state.entity_id
+                    break
     return buttons
 
 
@@ -211,8 +253,8 @@ def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) 
             _LOGGER.debug(f"Including button without area_id: {state.entity_id} ({name})")
 
         has_window_keyword = False
-        for kw in ["平推窗", "平开窗", "推拉窗", "天窗", "飘窗", "推拉门",
-                    "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗", "窗户", "窗"]:
+        for kw in ["外装平开窗", "内开内倒窗", "单内倒窗", "平推窗", "平开窗", "推拉窗",
+                    "内开窗", "外开窗", "天窗", "飘窗", "推拉门", "智能窗", "窗户", "窗"]:
             if kw.lower() in name_lower:
                 has_window_keyword = True
                 break
@@ -221,17 +263,13 @@ def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) 
 
         for keyword in action_keywords:
             keyword_lower = keyword.lower()
-            if keyword_lower in name_lower:
-                idx = name_lower.find(keyword_lower)
-                after_idx = idx + len(keyword_lower)
-                after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
-                before_char = name_lower[idx - 1] if idx > 0 else ' '
-                if after_char.strip() == '' and before_char.strip() == '':
-                    window_type = name_lower.replace(keyword_lower, '').strip()
-                    if window_type not in seen_window_types:
-                        seen_window_types.add(window_type)
-                        result.append(state.entity_id)
-                        _LOGGER.info(f"Found all-window button: {state.entity_id} (name: {name})")
-                    break
+            match_idx = _find_standalone_keyword(name_lower, keyword_lower)
+            if match_idx is not None:
+                window_type = name_lower[:match_idx].strip()
+                if window_type not in seen_window_types:
+                    seen_window_types.add(window_type)
+                    result.append(state.entity_id)
+                    _LOGGER.info(f"Found all-window button: {state.entity_id} (name: {name})")
+                break
 
     return result
