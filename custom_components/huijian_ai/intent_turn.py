@@ -298,6 +298,21 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         for kw in action_keywords:
             if name_lower.endswith(f" {kw}"):
                 return name[:-(len(kw) + 1)]
+        # 处理纯动作名称（无"设备名 "前缀的网关按钮）
+        # 网关集成因 has_entity_name=True，实体名可能只有 "开启" 而非 "设备名 开启"
+        _PURE_ACTION_NAMES = {
+            "开启", "打开", "open",
+            "关闭", "close",
+            "暂停", "停止", "pause", "stop",
+            "内倒", "内岛",
+        }
+        if name_lower in _PURE_ACTION_NAMES:
+            return "__action__"
+        # 处理动词+名词复合动作名（如"开窗"→"开"、"关窗"→"关"）
+        # 提高对非标准命名的容错率
+        for kw in ("开", "关"):
+            if name_lower.startswith(kw) and len(name_lower) <= 2:
+                return "__action__"
         return name
 
     @staticmethod
@@ -305,6 +320,11 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         name_lower = name.lower()
         for kw in keywords:
             if name_lower.endswith(f" {kw}") or name_lower == kw:
+                return True
+        # 处理复合动作名：如 "开启" → startswith("开")，匹配 "开" 关键词
+        # 处理网关 has_entity_name=True 场景下纯动作名的匹配
+        for kw in keywords:
+            if len(kw) == 1 and name_lower.startswith(kw):
                 return True
         return False
 
@@ -318,7 +338,7 @@ class TurnDeviceIntentBase(intent.IntentHandler):
                 continue
 
             name_lower = item.name.lower()
-            if "内倒" in name_lower:
+            if "内倒" in name_lower or "内岛" in name_lower:
                 _LOGGER.info("Skipping tilt button '%s' - use ControlWindow instead", item.name)
                 continue
 

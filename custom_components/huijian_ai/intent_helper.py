@@ -252,6 +252,42 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
                     len(prefix_matches), len(candidate_entities)
                 )
                 candidate_entities = prefix_matches
+            else:
+                # ── 设备名匹配 ──
+                # 当实体名不匹配请求名时（如 has_entity_name=True 的网关按钮，
+                # 实体名 "开启" vs 设备名 "开窗器 01"），通过设备注册表查找
+                dev_reg = dr.async_get(hass)
+                device_matches = []
+                for e in candidate_entities:
+                    entity_entry = e.entity
+                    if not entity_entry.device_id:
+                        continue
+                    device = dev_reg.async_get(entity_entry.device_id)
+                    if not device:
+                        continue
+                    device_name = device.name_by_user or device.name or ""
+                    if name_lower in device_name.lower() or device_name.lower() in name_lower:
+                        device_matches.append(e)
+                if device_matches:
+                    _LOGGER.info(
+                        "Device name match found: %d entities (filtered from %d via device name)",
+                        len(device_matches), len(candidate_entities)
+                    )
+                    candidate_entities = device_matches
+                else:
+                    # ── Entity ID 子串匹配 ──（最终兜底）
+                    # 当设备名也匹配不上时（如实体无 device_id），
+                    # 尝试用请求名匹配 entity_id（如 entity_id 含设备标识）
+                    entity_id_matches = [
+                        e for e in candidate_entities
+                        if name_lower in e.entity.entity_id.lower()
+                    ]
+                    if entity_id_matches:
+                        _LOGGER.info(
+                            "Entity ID match found: %d entities (filtered from %d via entity_id)",
+                            len(entity_id_matches), len(candidate_entities)
+                        )
+                        candidate_entities = entity_id_matches
 
     if len(candidate_entities) == 0:
         return {
