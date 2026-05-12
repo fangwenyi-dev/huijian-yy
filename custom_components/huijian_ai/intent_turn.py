@@ -276,14 +276,12 @@ class TurnDeviceIntentBase(intent.IntentHandler):
     async def _run_then_background(self, task: asyncio.Task[Any]) -> None:
         """Run task with timeout to (hopefully) catch validation errors.
 
-        If the task does not complete within the timeout, it will be cancelled.
+        After the timeout the task will continue to run in the background.
         """
         try:
             done, pending = await asyncio.wait({task}, timeout=self.service_timeout)
             if pending:
                 _LOGGER.error("Service call is timeout: %s", task.get_name())
-                for pending_task in pending:
-                    pending_task.cancel()
         except asyncio.CancelledError:
             # Task calling us was cancelled, so cancel service call task, and wait for
             # it to be cancelled, within reason, before leaving.
