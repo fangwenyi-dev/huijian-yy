@@ -54,8 +54,8 @@ def get_entity_name(entity_entry: er.RegistryEntry, state: State) -> str:
         alias = list(entity_entry.aliases)[0]
         return str(alias) if alias is not None else state.name
     
-    if entity_entry.name:
-        return str(entity_entry.name) if entity_entry.name is not None else state.name
+    if isinstance(entity_entry.name, str):
+        return entity_entry.name if entity_entry.name else state.name
     
     return state.name
 
@@ -214,6 +214,44 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
                 entity_info = EntityInfo(name=entity_name, area=entity_area, state=state, entity=entity_entry, on_off=on_off)
                 _LOGGER.info(f"Fallback match intent available target: {entity_info}")
                 candidate_entities.append(entity_info)
+
+    # ── 精确名称优先过滤 ──
+    # 如果 LLM 指定了 name，优先匹配完全相同的实体名
+    # 这样可以避免 HA 子串匹配导致的过匹配问题
+    requested_name = None
+    for target in targets:
+        for device in target["devices"]:
+            name = device.get("name")
+            if name:
+                requested_name = name
+                break
+        if requested_name:
+            break
+
+    if requested_name:
+        name_lower = requested_name.lower().strip()
+        exact_matches = [
+            e for e in candidate_entities
+            if e.name.lower() == name_lower
+        ]
+        if exact_matches:
+            _LOGGER.info(
+                "Exact name match found: %d entities (filtered from %d)",
+                len(exact_matches), len(candidate_entities)
+            )
+            candidate_entities = exact_matches
+        else:
+            # 无精确匹配时，尝试前缀匹配（如 name='窗户' 匹配 '2号测试窗户' 等）
+            prefix_matches = [
+                e for e in candidate_entities
+                if e.name.lower().startswith(name_lower)
+            ]
+            if prefix_matches:
+                _LOGGER.info(
+                    "Prefix name match found: %d entities (filtered from %d)",
+                    len(prefix_matches), len(candidate_entities)
+                )
+                candidate_entities = prefix_matches
 
     if len(candidate_entities) == 0:
         return {

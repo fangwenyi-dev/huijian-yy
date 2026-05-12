@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from functools import partial
+
+_LOGGER = logging.getLogger(__name__)
 
 from aioesphomeapi import EntityInfo, TextInfo, TextMode as EsphomeTextMode, TextState
 
 from homeassistant.components.text import TextEntity, TextMode
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 
 from .entity import (
     EsphomeEntity,
@@ -53,6 +57,58 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
         self._client.text_command(
             self._key, value, device_id=self._static_info.device_id
         )
+
+        if not value or "bo_fang_yu_yin" not in self.entity_id:
+            return
+
+        try:
+            ent_reg = er.async_get(self.hass)
+            my_entry = ent_reg.async_get(self.entity_id)
+            if not my_entry or not my_entry.device_id:
+                return
+
+            for entry in ent_reg.entities.values():
+                if entry.device_id != my_entry.device_id:
+                    continue
+                if entry.domain == "assist_satellite" and entry.entity_id:
+                    await self.hass.services.async_call(
+                        "assist_satellite",
+                        "announce",
+                        {
+                            "entity_id": entry.entity_id,
+                            "message": value,
+                        },
+                        blocking=True,
+                    )
+                    return
+                if entry.domain == "media_player" and entry.entity_id:
+                    await self.hass.services.async_call(
+                        "tts",
+                        "speak",
+                        {
+                            "entity_id": entry.entity_id,
+                            "message": value,
+                        },
+                        blocking=True,
+                    )
+                    return
+
+            _LOGGER.warning(
+                "No assist_satellite or media_player found for device %s. "
+                "Falling back to conversation agent for server-side TTS playback.",
+                my_entry.device_id
+            )
+            await self.hass.services.async_call(
+                "conversation",
+                "process",
+                {
+                    "text": value,
+                    "agent_id": "conversation.huijian_agent",
+                },
+                blocking=False,
+            )
+        except Exception:
+            _LOGGER.warning("Failed to play TTS", exc_info=True)
 
 
 async_setup_entry = partial(

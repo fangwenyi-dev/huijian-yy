@@ -20,6 +20,29 @@ from .intent_window_const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+async def _press_multi_buttons(hass, context, action: str, button_entity_ids: list[str]) -> dict:
+    """Press multiple window buttons and return results dict.
+    
+    Used by all-window paths (generic name like "所有窗户" or bare type name like "窗户").
+    """
+    results = []
+    for button_entity_id in button_entity_ids:
+        try:
+            await hass.services.async_call(
+                BUTTON_DOMAIN,
+                SERVICE_PRESS_BUTTON,
+                {ATTR_ENTITY_ID: button_entity_id},
+                context=context,
+                blocking=True,
+            )
+            results.append(button_entity_id)
+            _LOGGER.info(f"Pressed all-window button: {button_entity_id}")
+        except Exception as err:
+            _LOGGER.error(f"Failed to press {button_entity_id}: {err}")
+    return results
+
+
 class ControlWindowIntent(intent.IntentHandler):
     intent_type = "ControlWindow"
     description = (
@@ -75,20 +98,9 @@ class ControlWindowIntent(intent.IntentHandler):
             if area_name and action:
                 all_buttons = find_all_window_buttons_by_action(intent_obj.hass, area_name, action)
                 if all_buttons:
-                    results = []
-                    for button_entity_id in all_buttons:
-                        try:
-                            await intent_obj.hass.services.async_call(
-                                BUTTON_DOMAIN,
-                                SERVICE_PRESS_BUTTON,
-                                {ATTR_ENTITY_ID: button_entity_id},
-                                context=intent_obj.context,
-                                blocking=True,
-                            )
-                            results.append(button_entity_id)
-                            _LOGGER.info(f"Pressed all-window button: {button_entity_id}")
-                        except Exception as err:
-                            _LOGGER.error(f"Failed to press {button_entity_id}: {err}")
+                    results = await _press_multi_buttons(
+                        intent_obj.hass, intent_obj.context, action, all_buttons
+                    )
                     return {
                         "success": True,
                         "message": f"已{action}所有窗户",
@@ -99,18 +111,42 @@ class ControlWindowIntent(intent.IntentHandler):
                 "error": f"Could not extract window name from '{device_name}'"
             }
 
+        # Detect when LLM sends just the bare window type name (e.g., name="窗户")
+        # This means "all windows of this type in the area"
+        is_all_windows = (
+            window_name and device_name and
+            device_name.strip().lower() == window_name.lower()
+        )
+
+        if is_all_windows:
+            if area_name and action:
+                all_buttons = find_all_window_buttons_by_action(intent_obj.hass, area_name, action)
+                if all_buttons:
+                    results = await _press_multi_buttons(
+                        intent_obj.hass, intent_obj.context, action, all_buttons
+                    )
+                    return {
+                        "success": True,
+                        "message": f"已{action}所有窗户",
+                        "buttons": results,
+                    }
+            return {
+                "success": False,
+                "error": f"Could not find any {action} buttons in {area_name}"
+            }
+
         if not action:
             return {
                 "success": False,
                 "error": f"Could not determine action from '{device_name}' or '{action_slot}'"
             }
 
-        buttons = find_window_buttons(intent_obj.hass, window_name, area_name)
+        buttons = find_window_buttons(intent_obj.hass, window_name, area_name, original_name=device_name)
 
         _LOGGER.info(f"Found buttons (with area filter): {buttons}")
 
         if action not in buttons and area_name:
-            buttons = find_window_buttons(intent_obj.hass, window_name, None)
+            buttons = find_window_buttons(intent_obj.hass, window_name, None, original_name=device_name)
             _LOGGER.info(f"Found buttons (without area filter): {buttons}")
 
         if action not in buttons:

@@ -742,7 +742,7 @@ def _action_to_text(action: dict) -> str:
     target = params.get("target", [])
     action_text = ""
     if intent_name == "ControlWindow":
-        action_map = {"open": "打开", "close": "关闭", "pause": "暂停", "a": "内倒"}
+        action_map = {"open": "打开", "close": "关闭", "pause": "暂停"}
         raw_action = params.get("action", "")
         action_text = action_map.get(raw_action, raw_action + "窗户")
     elif intent_name == "TurnDeviceOn":

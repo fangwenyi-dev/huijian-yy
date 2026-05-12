@@ -373,7 +373,7 @@ class TurnDeviceOnIntent(TurnDeviceIntentBase):
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore
         """Get the current state of exposed entities."""
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"TurnDeviceOff slots={slots}")
+        _LOGGER.info(f"TurnDeviceOn slots={slots}")
         return await super()._async_handle(intent_obj, slots, "turn_on")
 
 

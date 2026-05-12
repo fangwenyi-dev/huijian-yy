@@ -2,8 +2,6 @@ import logging
 
 from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN
 from homeassistant.components.input_button import DOMAIN as INPUT_BUTTON_DOMAIN
-from homeassistant.const import ATTR_ENTITY_ID
-from homeassistant.components.button.const import SERVICE_PRESS as SERVICE_PRESS_BUTTON
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,7 +112,7 @@ def is_remove_button(state) -> bool:
     return False
 
 
-def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[str, str]:
+def find_window_buttons(hass, window_name: str, area_name: str | None, original_name: str | None = None) -> dict[str, str]:
     from homeassistant.helpers import entity_registry as er
     entity_registry = er.async_get(hass)
 
@@ -127,7 +125,7 @@ def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[s
             target_area_id = area.id
 
     result = {}
-    _LOGGER.info(f"Searching buttons: window_name='{window_name}', area_name='{area_name}', target_area_id='{target_area_id}'")
+    _LOGGER.info(f"Searching buttons: window_name='{window_name}', area_name='{area_name}', target_area_id='{target_area_id}', original_name='{original_name}'")
 
     button_count = 0
     match_count = 0
@@ -142,6 +140,12 @@ def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[s
         if len(wn) > len(window_name) and window_name_lower in wn.lower()
     }
 
+    # If the original name is more specific than the extracted window name,
+    # also filter by the original name for precise matching
+    # e.g., window_name="窗户", original_name="2号测试窗户"
+    use_exact_filter = (original_name and original_name.strip().lower() != window_name_lower)
+    original_name_lower = original_name.strip().lower() if use_exact_filter else None
+
     for state in hass.states.async_all():
         if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
             continue
@@ -154,6 +158,8 @@ def find_window_buttons(hass, window_name: str, area_name: str | None) -> dict[s
         if window_name_lower not in name_lower:
             continue
         if any(ln.lower() in name_lower for ln in _conflicting_longer_names):
+            continue
+        if use_exact_filter and original_name_lower not in name_lower:
             continue
 
         match_count += 1
@@ -252,12 +258,13 @@ def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) 
         if target_area_id and not entry.area_id:
             _LOGGER.debug(f"Including button without area_id: {state.entity_id} ({name})")
 
-        has_window_keyword = False
-        for kw in ["外装平开窗", "内开内倒窗", "单内倒窗", "平推窗", "平开窗", "推拉窗",
-                    "内开窗", "外开窗", "天窗", "飘窗", "推拉门", "智能窗", "窗户", "窗"]:
-            if kw.lower() in name_lower:
-                has_window_keyword = True
-                break
+        # Auto-derive window keywords from WINDOW_NAME_MAPPING
+        # so they stay in sync when new window types are added
+        window_keywords = sorted(
+            set(WINDOW_NAME_MAPPING.keys()) | set(WINDOW_NAME_MAPPING.values()),
+            key=len, reverse=True
+        )
+        has_window_keyword = any(kw.lower() in name_lower for kw in window_keywords)
         if not has_window_keyword:
             continue
 
