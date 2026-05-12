@@ -93,31 +93,21 @@ class huijianSttEntity(BaseEntity):
             metadata.bit_rate,
             metadata.sample_rate,
         )
-        try:
-            transport = stt_transport.get_entry_transport(self.hass, self.entry)
-            if not await transport.ensure_connected():
-                _LOGGER.error("Failed to establish WebSocket connection for STT")
-                return SpeechResult(None, SpeechResultState.ERROR)
-            await transport.send_hello()
-
-            await transport.send_message({"type": "listen", "state": "start"})
-            async for chunk in wav_to_opus(stream):
-                await transport.send_message(chunk)
-                _LOGGER.info("Sent audio data, size: %s", len(chunk))
-            await transport.send_message({"type": "listen", "state": "stop"})
-
-            text = None
-            async for resp in transport.await_message(60):
-                _LOGGER.info("Received response: %s", resp)
-                if getattr(resp, "error", None):
-                    _LOGGER.error("STT server error: %s", resp.error)
-                    return SpeechResult(None, SpeechResultState.ERROR)
-                if getattr(resp, "type", None) in ["stt", "tts"]:
-                    text = resp.text
-            if text is None:
-                _LOGGER.error("STT result is empty, no valid response received")
-                return SpeechResult(None, SpeechResultState.ERROR)
-            return SpeechResult(text, SpeechResultState.SUCCESS)
-        except Exception:
-            _LOGGER.error("STT processing failed", exc_info=True)
+        transport = stt_transport.get_entry_transport(self.hass, self.entry)
+        if not await transport.ensure_connected():
+            _LOGGER.error("Failed to establish WebSocket connection for STT")
             return SpeechResult(None, SpeechResultState.ERROR)
+        await transport.send_hello()
+
+        await transport.send_message({"type": "listen", "state": "start"})
+        async for chunk in wav_to_opus(stream):
+            await transport.send_message(chunk)
+            _LOGGER.info("Sent audio data, size: %s", len(chunk))
+        await transport.send_message({"type": "listen", "state": "stop"})
+
+        text = None
+        async for resp in transport.await_message(60):
+            _LOGGER.info("Received response: %s", resp)
+            if resp.type in ["stt", "tts"]:
+                text = resp.text
+        return SpeechResult(text, SpeechResultState.SUCCESS) # type: ignore
