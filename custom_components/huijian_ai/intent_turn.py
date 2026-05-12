@@ -43,6 +43,31 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         # "内倒" (tilt) buttons are always excluded — use ControlWindow instead.
         candidate_entities = self._filter_button_entities(candidate_entities, service)
 
+        # Cross-domain dedup by device_id.
+        # When LLM sends domain="window", DOMAIN_ALIASES expands to ["cover", "button"],
+        # causing both cover AND button entities of the same device to be returned.
+        # Without dedup, cover.open_cover + button.press both execute → duplicate MQTT commands.
+        # Strategy: if a device has a non-button entity (cover/lock/etc), skip its buttons.
+        dedup_device_ids: set[str] = set()
+        for item in candidate_entities:
+            if item.state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
+                device_id = item.entity.device_id
+                if device_id:
+                    dedup_device_ids.add(device_id)
+        deduped: list[EntityInfo] = []
+        for item in candidate_entities:
+            device_id = item.entity.device_id
+            if (device_id and device_id in dedup_device_ids
+                    and item.state.domain in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN)):
+                _LOGGER.info(
+                    "Skipping button '%s' (device_id=%s) - "
+                    "device already handled by non-button entity",
+                    item.name, device_id
+                )
+                continue
+            deduped.append(item)
+        candidate_entities = deduped
+
         # Execute operation.
         control_targets = []
         entity_key_map = set() # for deduplication
