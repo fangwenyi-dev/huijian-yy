@@ -51,58 +51,43 @@ class huijianTtsEntity(BaseEntity):
     
 
     async def async_get_tts_audio(
-        self, message: str, language: str, options: dict | None = None
+        self, message: str, language: str, options: dict
     ) -> TtsAudioType:
-        """Load tts audio data from the local url."""
-        try:
-            entry = self.entry
-            transport = tts_transport.get_entry_transport(self.hass, entry)
+        _LOGGER.info("huijianTtsEntity.async_get_tts_audio: message=%s, language=%s, options=%s", message, language, options)
+        transport = tts_transport.get_entry_transport(self.hass, self.entry)
+        if not await transport.ensure_connected():
+            _LOGGER.error("Failed to establish WebSocket connection for TTS")
+            return None, None
 
-            if not await transport.ensure_connected():
-                return (None, None)
-
-            await transport.send_hello()
-            await transport.send_message(
-                {
-                    "type": "speak",
-                    "state": "start",
-                    "text": message,
-                }
-            )
-
-            format: str | None = None
-            audio = b""
-
-            async def data_gen():
-                nonlocal format
-                decoder = opuslib.Decoder(self.opus_sample_rate, self.opus_channels)
-                async for resp in transport.await_message():
-                    if isinstance(resp, bytes):
-                        yield decoder.decode(bytes(resp), self.opus_frame_samples)
-                    else:
-                        if getattr(resp, "error", None):
-                            raise RuntimeError(resp.error)
-                        if resp.format == "wav":
-                            format = "wav"
-                        elif resp.format == "mp3":
-                            format = "mp3"
-                        elif resp.format == "ogg":
-                            format = "ogg"
-                        else:
-                            format = "wav"
-
-            converting = async_convert_audio(
-                self.hass,
-                data_gen(),
-                "s16le",
-                "mp3",
-                input_params=["-ar", "16000", "-ac", "1"],
-            )
-
-            async for chunk in converting:
-                audio += chunk
-
-            return (format or "mp3", audio)
-        except Exception:
-            _LOGGER.error("TTS playback failed for message: %s", message, exc_info=True)
-            return (None, None)
+        format = options.get("audio_format") or "mp3"
+        await transport.send_message({
+            "type": "tts",
+            "state": "detect",
+            "text": message,
+        })
+        async def data_gen():
+            decoder = opuslib.Decoder(self.opus_sample_rate, self.opus_channels)
+            async for resp in transport.await_message():
+                if isinstance(resp, bytes):
+                    try:
+                        resp = decoder.decode(resp, self.opus_frame_samples)
+                    except Exception as e:
+                        _LOGGER.error("Decode opus failed: %s", e)
+                    _LOGGER.info("Received bytes: %s %s", len(resp), resp.hex()[0:64])
+                    yield resp
+                else:
+                    if getattr(resp, "error", None):
+                        raise RuntimeError(resp.error)
+                    _LOGGER.info("Received response: %s", resp)
+        audio = b""
+        converting = async_convert_audio(
+            self.hass, data_gen(), "s16le",
+            to_extension=format,
+            input_params=[
+                "-ar", str(self.opus_sample_rate),
+                "-ac", str(self.opus_channels),
+            ],
+        )
+        async for chunk in converting:
+            audio += chunk
+        return format, audio
