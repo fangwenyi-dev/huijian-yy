@@ -25,6 +25,17 @@ DOMAIN_ALIASES: dict[str, str | list[str]] = {
     "plugs": "switch",
     "outlet": "switch",
     "outlets": "switch",
+    "fan": "fan",
+    "fans": "fan",
+    "ac": "climate",
+    "air_conditioner": "climate",
+    "heater": "climate",
+    "lamp": "light",
+    "lamps": "light",
+    "door": ["lock", "cover", "button"],
+    "doors": ["lock", "cover", "button"],
+    "tv": "media_player",
+    "speaker": "media_player",
 }
 
 
@@ -40,7 +51,7 @@ def _expand_domains(domains: list[str]) -> list[str]:
     return expanded
 
 
-def target_paramter_type():
+def target_parameter_type():
     return vol.All(cv.ensure_list, [vol.Schema({
             vol.Optional("devices"): vol.All(cv.ensure_list, [vol.Schema({
                 vol.Required("domains"): vol.All(cv.ensure_list, [cv.string]), 

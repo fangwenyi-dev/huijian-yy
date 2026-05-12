@@ -21,7 +21,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
-from .intent_helper import EntityInfo, HaTargetItem, match_intent_entities, target_paramter_type
+from .intent_helper import EntityInfo, HaTargetItem, match_intent_entities, target_parameter_type
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -387,7 +387,7 @@ class TurnDeviceOnIntent(TurnDeviceIntentBase):
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
         return {
-            vol.Required("target"): target_paramter_type(),
+            vol.Required("target"): target_parameter_type(),
         }
     
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore
@@ -413,7 +413,7 @@ class TurnDeviceOffIntent(TurnDeviceIntentBase):
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
         return {
-            vol.Required("target"): target_paramter_type(),
+            vol.Required("target"): target_parameter_type(),
         }
     
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore

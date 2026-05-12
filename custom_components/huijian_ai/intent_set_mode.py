@@ -12,7 +12,7 @@ from homeassistant.util.json import JsonObjectType
 from homeassistant.helpers import entity_registry as er
 
 from .intent_helper import (HaTargetItem, match_intent_entities,
-                            target_paramter_type)
+                            target_parameter_type)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class SetDeviceModeIntent(intent.IntentHandler):
         """Return a slot schema."""
         return {
             vol.Required("mode"): intent.non_empty_string,
-            vol.Required("target"): target_paramter_type(),
+            vol.Required("target"): target_parameter_type(),
         }
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore

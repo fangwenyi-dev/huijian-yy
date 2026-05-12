@@ -8,7 +8,7 @@ from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
-from .intent_helper import HaTargetItem, target_paramter_type
+from .intent_helper import HaTargetItem, target_parameter_type
 from .intent_window_const import (
     WINDOW_NAME_MAPPING,
     WINDOW_ACTION_MAPPING,
@@ -61,7 +61,7 @@ class ControlWindowIntent(intent.IntentHandler):
         """Return a slot schema."""
         return {
             vol.Optional("action"): str,
-            vol.Required("target"): target_paramter_type(),
+            vol.Required("target"): target_parameter_type(),
         }
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:

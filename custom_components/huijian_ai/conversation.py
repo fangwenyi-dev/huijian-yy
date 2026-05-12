@@ -1,5 +1,7 @@
 import json
 import logging
+
+import anyio
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.components import conversation
@@ -67,6 +69,15 @@ class huijianConversationEntity(BaseEntity):
         await self._async_handle_chat_log(transport, user_input, chat_log)
         return conversation.async_get_result_from_chat_log(user_input, chat_log)
 
+    async def _await_message_with_timeout(self, transport, timeout=60):
+        try:
+            async with anyio.fail_after(timeout):
+                async for msg in transport.await_message():
+                    yield msg
+        except TimeoutError:
+            _LOGGER.error("LLM response timeout after %ss", timeout)
+            yield {"error": "抱歉，AI 响应超时，请重试"}
+
     async def _async_handle_chat_log(
         self,
         transport: llm_transport.LlmTransport,
@@ -80,6 +91,6 @@ class huijianConversationEntity(BaseEntity):
         }))
         async for content in chat_log.async_add_delta_content_stream(
             self.entity_id,
-            transport.await_message() # type: ignore
+            self._await_message_with_timeout(transport)
         ):
             _LOGGER.info("LLM response: %s", content)
