@@ -176,7 +176,18 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
         entity_id = state.entity_id
         name_lower = name.lower()
 
-        if not any(alt in name_lower for alt in alt_names):
+        # Check window keywords in BOTH entity name and device name.
+        # Entity name may be generic ("开窗器 开启") while device name
+        # contains the specific window type ("平推窗" / "2号测试窗户")
+        alt_matched = any(alt in name_lower for alt in alt_names)
+        if not alt_matched:
+            entry_check = entity_registry.async_get(entity_id)
+            if entry_check and entry_check.device_id:
+                device_check = device_registry.async_get(entry_check.device_id)
+                if device_check:
+                    device_display_lower = (device_check.name_by_user or device_check.name or "").lower()
+                    alt_matched = any(alt in device_display_lower for alt in alt_names)
+        if not alt_matched:
             continue
         if any(ln.lower() in name_lower for ln in _conflicting_longer_names):
             continue

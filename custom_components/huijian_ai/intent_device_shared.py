@@ -2,7 +2,7 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-WINDOW_KEYWORDS = ["窗户", "平推窗", "平开窗", "推拉窗", "内开窗", "外开窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]
+WINDOW_KEYWORDS = ["窗户", "窗", "平推窗", "平开窗", "推拉窗", "内开窗", "外开窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]
 WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
 WINDOW_DOMAINS = {"window", "windows"}
 

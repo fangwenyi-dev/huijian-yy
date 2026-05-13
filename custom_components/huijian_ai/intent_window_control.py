@@ -111,11 +111,13 @@ class ControlWindowIntent(intent.IntentHandler):
                 "error": f"Could not extract window name from '{device_name}'"
             }
 
-        # Detect when LLM sends just the bare window type name (e.g., name="窗户")
+        # Detect when LLM sends just the bare general window name (e.g., name="窗户" or "窗")
         # This means "all windows of this type in the area"
+        # Specific type names like "平推窗" should NOT trigger all-windows mode
         is_all_windows = (
             window_name and device_name and
-            device_name.strip().lower() == window_name.lower()
+            device_name.strip().lower() == window_name.lower() and
+            window_name.lower() in ("窗户", "窗")
         )
 
         if is_all_windows:

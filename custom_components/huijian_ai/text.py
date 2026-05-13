@@ -54,61 +54,79 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
     @convert_api_error_ha_error
     async def async_set_value(self, value: str) -> None:
         """Update the current value."""
-        self._client.text_command(
-            self._key, value, device_id=self._static_info.device_id
-        )
-
-        if not value or "bo_fang_yu_yin" not in self.entity_id:
+        if "bo_fang_yu_yin" not in self.entity_id:
+            self._client.text_command(
+                self._key, value, device_id=self._static_info.device_id
+            )
             return
 
         try:
-            ent_reg = er.async_get(self.hass)
-            my_entry = ent_reg.async_get(self.entity_id)
-            if not my_entry or not my_entry.device_id:
-                return
-
-            for entry in ent_reg.entities.values():
-                if entry.device_id != my_entry.device_id:
-                    continue
-                if entry.domain == "assist_satellite" and entry.entity_id:
-                    await self.hass.services.async_call(
-                        "assist_satellite",
-                        "announce",
-                        {
-                            "entity_id": entry.entity_id,
-                            "message": value,
-                        },
-                        blocking=True,
-                    )
-                    return
-                if entry.domain == "media_player" and entry.entity_id:
-                    await self.hass.services.async_call(
-                        "tts",
-                        "speak",
-                        {
-                            "entity_id": entry.entity_id,
-                            "message": value,
-                        },
-                        blocking=True,
-                    )
-                    return
-
-            _LOGGER.warning(
-                "No assist_satellite or media_player found for device %s. "
-                "Falling back to conversation agent for server-side TTS playback.",
-                my_entry.device_id
-            )
-            await self.hass.services.async_call(
-                "conversation",
-                "process",
-                {
-                    "text": value,
-                    "agent_id": "conversation.huijian_agent",
-                },
-                blocking=False,
-            )
+            await self._play_tts(value)
         except Exception:
-            _LOGGER.warning("Failed to play TTS", exc_info=True)
+            _LOGGER.warning("TTS 播放失败", exc_info=True)
+
+    async def _play_tts(self, text: str) -> None:
+        """使用 edge-tts 生成音频并通过同设备的 media_player 播放。"""
+        ent_reg = er.async_get(self.hass)
+        my_entry = ent_reg.async_get(self.entity_id)
+        if not my_entry or not my_entry.device_id:
+            _LOGGER.warning("无法找到实体 %s 对应的设备", self.entity_id)
+            return
+
+        media_player_entity = None
+        for entry in ent_reg.entities.values():
+            if entry.device_id == my_entry.device_id and entry.domain == "media_player":
+                media_player_entity = entry.entity_id
+                break
+
+        if not media_player_entity:
+            _LOGGER.warning("设备 %s 没有关联的 media_player 实体", my_entry.device_id)
+            return
+
+        import edge_tts
+        import time
+        from pathlib import Path
+
+        communicate = edge_tts.Communicate(text, "zh-CN-XiaoxiaoNeural")
+        audio = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio += chunk["data"]
+
+        if not audio:
+            _LOGGER.warning("edge-tts 生成的音频为空: %s", text)
+            return
+
+        www_dir = Path(self.hass.config.path("www"), "huijian_tts")
+        www_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"tts_{int(time.time() * 1000)}.mp3"
+        filepath = www_dir / filename
+        filepath.write_bytes(audio)
+
+        from homeassistant.helpers.network import get_url
+
+        try:
+            base_url = get_url(self.hass, prefer_external=False)
+        except Exception:
+            base_url = f"http://{self.hass.config.api.host}:{self.hass.http.server_port}"
+
+        url = f"{base_url}/local/huijian_tts/{filename}"
+
+        await self.hass.services.async_call(
+            "media_player",
+            "play_media",
+            {
+                "entity_id": media_player_entity,
+                "media_content_id": url,
+                "media_content_type": "audio/mp3",
+                "announce": True,
+            },
+            blocking=False,
+        )
+
+        files = sorted(www_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in files[10:]:
+            f.unlink(missing_ok=True)
 
 
 async_setup_entry = partial(

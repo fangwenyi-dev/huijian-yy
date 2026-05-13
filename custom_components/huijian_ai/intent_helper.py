@@ -137,13 +137,16 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
     """Match entities by request parameters."""
     hass = intent_obj.hass
     found_states: list[StateWithAreaConstraint] = []
+    all_expanded_domains: set[str] = set()
     for target in targets:
         for device in target["devices"]:
             area_name = target.get("area")
+            expanded_domains = _expand_domains(device["domains"])
+            all_expanded_domains.update(expanded_domains)
             match_constraints = intent.MatchTargetsConstraints(
                 name=device.get("name"),
                 area_name=area_name,
-                domains=_expand_domains(device["domains"]),
+                domains=expanded_domains,
                 assistant=intent_obj.assistant,
                 single_target=False,
                 allow_duplicate_names=True,
@@ -187,10 +190,12 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
         for target in targets:
             for device in target["devices"]:
                 area_name = target.get("area")
+                expanded_domains = _expand_domains(device["domains"])
+                all_expanded_domains.update(expanded_domains)
                 match_constraints = intent.MatchTargetsConstraints(
                     name=device.get("name"),
                     area_name=area_name,
-                    domains=_expand_domains(device["domains"]),
+                    domains=expanded_domains,
                     assistant=None,
                     single_target=False,
                     allow_duplicate_names=True,
@@ -299,6 +304,44 @@ async def match_intent_entities(intent_obj: intent.Intent, targets: list[HaTarge
                             len(entity_id_matches), len(candidate_entities)
                         )
                         candidate_entities = entity_id_matches
+
+    # ── 设备注册表级兜底（第5级） ──
+    # 前4级匹配全部失败（如按钮实体名"开窗器 开启"完全不包含
+    # 请求的设备名"2号测试窗"），HA 的 async_match_targets 按
+    # 实体名匹配完全找不到结果。此时通过设备注册表按设备名查找。
+    if len(candidate_entities) == 0 and requested_name:
+        _LOGGER.info(
+            "Device registry fallback: name='%s', expanded_domains=%s",
+            requested_name, all_expanded_domains
+        )
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        name_lower = requested_name.lower().strip()
+        matched_device_ids: set[str] = set()
+        for device_entry in dev_reg.devices.values():
+            device_display = (device_entry.name_by_user or device_entry.name or "").lower()
+            if device_display and (name_lower in device_display or device_display in name_lower):
+                matched_device_ids.add(device_entry.id)
+
+        if matched_device_ids:
+            for entity_entry in list(ent_reg.entities.values()):
+                if entity_entry.device_id not in matched_device_ids:
+                    continue
+                if all_expanded_domains and entity_entry.domain not in all_expanded_domains:
+                    continue
+                state = hass.states.get(entity_entry.entity_id)
+                if not state or state.state == "unavailable":
+                    continue
+                entity_area = get_entity_area(hass, entity_entry)
+                entity_name = get_entity_name(entity_entry, state)
+                on_off = "off" if state.state == "off" else "on"
+                entity_info = EntityInfo(
+                    name=entity_name, area=entity_area,
+                    state=state, entity=entity_entry, on_off=on_off
+                )
+                _LOGGER.info("Device registry fallback entity: %s", entity_info)
+                candidate_entities.append(entity_info)
 
     if len(candidate_entities) == 0:
         return {
