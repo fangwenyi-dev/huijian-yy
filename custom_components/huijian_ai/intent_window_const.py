@@ -46,9 +46,11 @@ def extract_window_name(name: str) -> str | None:
     if any(gn in name_lower for gn in generic_names):
         _LOGGER.info(f"Detected generic window name '{name}', will use fallback mode")
         return None
-    for mapped_name in WINDOW_NAME_MAPPING.values():
-        if mapped_name.lower() in name_lower:
-            return mapped_name
+    # Check both keys AND values of WINDOW_NAME_MAPPING.
+    # e.g. "2号测试窗" → value "窗户" not found, but key "窗" is found → returns "窗户"
+    for key, value in WINDOW_NAME_MAPPING.items():
+        if key.lower() in name_lower or value.lower() in name_lower:
+            return value
     return None
 
 
@@ -78,9 +80,12 @@ def _strip_window_names(text_lower: str) -> str:
     
     e.g. '内开内倒窗' contains '开' (open keyword) and '内倒' (tilt keyword),
     which would interfere with action detection.
+    Strips both keys and values from WINDOW_NAME_MAPPING so that shorthand
+    variants like '窗' are also removed.
     """
     remaining = text_lower
-    for wname in sorted(WINDOW_NAME_MAPPING.values(), key=len, reverse=True):
+    all_names = set(WINDOW_NAME_MAPPING.keys()) | set(WINDOW_NAME_MAPPING.values())
+    for wname in sorted(all_names, key=len, reverse=True):
         remaining = remaining.replace(wname.lower(), "")
     return remaining
 
@@ -114,7 +119,9 @@ def is_remove_button(state) -> bool:
 
 def find_window_buttons(hass, window_name: str, area_name: str | None, original_name: str | None = None) -> dict[str, str]:
     from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers import device_registry as dr
     entity_registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
 
     target_area_id = None
     if area_name:
@@ -132,13 +139,27 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
     skip_area_count = 0
     skip_remove_count = 0
 
+    # Build alternative names: e.g. window_name="窗户" → also check "窗" (the key)
+    window_name_lower = window_name.lower()
+    alt_names = {window_name_lower}
+    for key, value in WINDOW_NAME_MAPPING.items():
+        if value.lower() == window_name_lower and key.lower() != window_name_lower:
+            alt_names.add(key.lower())
+
     # Build set of longer window names that contain this window_name as substring
     # Prevents matching e.g. "内开内倒窗" buttons when searching for "内开窗"
-    window_name_lower = window_name.lower()
-    _conflicting_longer_names = {
-        wn for wn in set(WINDOW_NAME_MAPPING.values())
-        if len(wn) > len(window_name) and window_name_lower in wn.lower()
-    }
+    _conflicting_longer_names: set[str] = set()
+    for wname in set(WINDOW_NAME_MAPPING.values()):
+        wname_lower = wname.lower()
+        if len(wname) > len(window_name):
+            if any(alt in wname_lower for alt in alt_names):
+                _conflicting_longer_names.add(wname_lower)
+    # Also check keys of WINDOW_NAME_MAPPING for conflicts
+    for wkey in set(WINDOW_NAME_MAPPING.keys()):
+        wkey_lower = wkey.lower()
+        if wkey_lower != window_name_lower and len(wkey) > len(window_name):
+            if any(alt in wkey_lower for alt in alt_names):
+                _conflicting_longer_names.add(wkey_lower)
 
     # If the original name is more specific than the extracted window name,
     # also filter by the original name for precise matching
@@ -155,12 +176,27 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
         entity_id = state.entity_id
         name_lower = name.lower()
 
-        if window_name_lower not in name_lower:
+        if not any(alt in name_lower for alt in alt_names):
             continue
         if any(ln.lower() in name_lower for ln in _conflicting_longer_names):
             continue
         if use_exact_filter and original_name_lower not in name_lower:
-            continue
+            # Gateway fallback: button names like "开窗器 {sn} 开启" don't contain
+            # the device's custom name (e.g., "2号测试窗").
+            # Check if the button's device name matches instead.
+            entry = entity_registry.async_get(entity_id)
+            if entry and entry.device_id:
+                device = device_registry.async_get(entry.device_id)
+                if device:
+                    device_display = (device.name_by_user or device.name or "").lower()
+                    if original_name_lower in device_display or device_display in original_name_lower:
+                        pass  # device name matches, allow through
+                    else:
+                        continue
+                else:
+                    continue
+            else:
+                continue
 
         match_count += 1
 
