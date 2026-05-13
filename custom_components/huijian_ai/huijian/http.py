@@ -4,7 +4,7 @@ from aiohttp import web
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.http import HomeAssistantView, KEY_HASS
-from ..const import DOMAIN
+from ..const import CONF_STT_ENTITY_ID, CONF_TTS_ENTITY_ID, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13,13 +13,13 @@ async def async_setup_https(hass: HomeAssistant):
     if this_data.get("https_setup"):
         return
     this_data["https_setup"] = True
-    hass.http.register_view(huijianSetupView)
-    hass.http.register_view(huijianRemoveView)
-    hass.http.register_view(huijianSetNameView)
-    hass.http.register_view(huijianTtsSttView)
+    hass.http.register_view(HuijianSetupView)
+    hass.http.register_view(HuijianRemoveView)
+    hass.http.register_view(HuijianSetNameView)
+    hass.http.register_view(HuijianTtsSttView)
 
 
-class huijianHttpView(HomeAssistantView):
+class HuijianHttpView(HomeAssistantView):
     requires_auth = False
 
     async def check_sign(self, request: web.Request, speak_id=None):
@@ -46,7 +46,7 @@ class huijianHttpView(HomeAssistantView):
         return entry if ret else False
 
 
-class huijianSetupView(huijianHttpView):
+class HuijianSetupView(HuijianHttpView):
     url = "/api/huijian-ai/setup/qrcode"
     name = "api:huijian-ai:setup-qrcode"
 
@@ -64,7 +64,7 @@ class huijianSetupView(huijianHttpView):
         this_data[uuid] = setup_data
         return self.json_message("ok")
 
-class huijianRemoveView(huijianHttpView):
+class HuijianRemoveView(HuijianHttpView):
     url = "/api/huijian-ai/remove"
     name = "api:huijian-ai:remove"
 
@@ -80,7 +80,7 @@ class huijianRemoveView(huijianHttpView):
         await hass.config_entries.async_remove(entry.entry_id)
         return self.json_message("ok")
 
-class huijianSetNameView(huijianHttpView):
+class HuijianSetNameView(HuijianHttpView):
     url = "/api/huijian-ai/update/speakname"
     name = "api:huijian-ai:update:speakname"
 
@@ -103,7 +103,7 @@ class huijianSetNameView(huijianHttpView):
         hass.config_entries.async_update_entry(entry, title=name)
         return self.json_message("ok")
 
-class huijianTtsSttView(huijianHttpView):
+class HuijianTtsSttView(HuijianHttpView):
     requires_auth = True
     url = "/api/huijian-ai/tts-stt"
     name = "api:huijian-ai:tts-stt"
@@ -111,8 +111,15 @@ class huijianTtsSttView(huijianHttpView):
     async def get(self, request: web.Request):
         hass = request.app[KEY_HASS]
         message = request.query.get("message")
-        tts_entity = request.query.get("tts_entity", "tts.huijian_speech")
-        stt_entity = request.query.get("stt_entity", "stt.huijian_asr")
+
+        default_tts = "tts.huijian_speech"
+        default_stt = "stt.huijian_asr"
+        for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+            default_tts = entry.options.get(CONF_TTS_ENTITY_ID, default_tts)
+            default_stt = entry.options.get(CONF_STT_ENTITY_ID, default_stt)
+
+        tts_entity = request.query.get("tts_entity", default_tts)
+        stt_entity = request.query.get("stt_entity", default_stt)
 
         try:
             stream = hass.data["tts_manager"].async_create_result_stream(

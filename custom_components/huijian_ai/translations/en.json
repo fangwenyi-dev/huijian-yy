@@ -116,6 +116,12 @@
                     "preferred": "Preferred"
                 }
             },
+            "pipeline_n": {
+                "name": "Assistant {index}",
+                "state": {
+                    "preferred": "Preferred"
+                }
+            },
             "vad_sensitivity": {
                 "name": "Finished speaking detection",
                 "state": {
@@ -126,6 +132,13 @@
             },
             "wake_word": {
                 "name": "Wake word{index}",
+                "state": {
+                    "no_wake_word": "No wake word",
+                    "okay_nabu": "Okay Nabu"
+                }
+            },
+            "wake_word_n": {
+                "name": "Wake word {index}",
                 "state": {
                     "no_wake_word": "No wake word",
                     "okay_nabu": "Okay Nabu"

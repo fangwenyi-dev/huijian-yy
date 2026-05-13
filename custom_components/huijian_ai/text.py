@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from functools import partial
+from pathlib import Path
+
+import edge_tts
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,9 +57,10 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
     @convert_api_error_ha_error
     async def async_set_value(self, value: str) -> None:
         """Update the current value."""
-        if "play_voice_text" not in self.entity_id:
+        static_info = self._static_info
+        if not hasattr(static_info, "object_id") or static_info.object_id != "play_voice_text":
             self._client.text_command(
-                self._key, value, device_id=self._static_info.device_id
+                self._key, value, device_id=static_info.device_id
             )
             return
 
@@ -65,12 +70,7 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
             _LOGGER.warning("TTS 播放失败", exc_info=True)
 
     async def _play_tts(self, text: str) -> None:
-        """使用 edge-tts 生成 WAV 音频，通过 media_player 播放。"""
-        import time
-        from pathlib import Path
-
-        import edge_tts
-
+        """使用 edge-tts 生成 MP3 音频，通过 media_player 播放。"""
         communicate = edge_tts.Communicate(text, "zh-CN-XiaoxiaoNeural")
         mp3_data = b""
         async for chunk in communicate.stream():
@@ -82,11 +82,13 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
             return
 
         www_dir = Path(self.hass.config.path("www"), "huijian_tts")
-        www_dir.mkdir(parents=True, exist_ok=True)
+        await self.hass.async_add_executor_job(
+            partial(www_dir.mkdir, parents=True, exist_ok=True)
+        )
 
         timestamp = int(time.time() * 1000)
         mp3_path = www_dir / f"tts_{timestamp}.mp3"
-        mp3_path.write_bytes(mp3_data)
+        await self.hass.async_add_executor_job(mp3_path.write_bytes, mp3_data)
 
         from homeassistant.helpers.network import get_url
 
@@ -97,16 +99,7 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
 
         url = f"{base_url}/local/huijian_tts/tts_{timestamp}.mp3"
 
-        from homeassistant.helpers import entity_registry as er
-
-        entity_reg = er.async_get(self.hass)
-        device_entries = er.async_entries_for_device(
-            entity_reg, self._static_info.device_id
-        )
-        media_player_entity_id = next(
-            (e.entity_id for e in device_entries if e.domain == "media_player"),
-            None
-        )
+        media_player_entity_id = await self._find_media_player()
         if media_player_entity_id is None:
             _LOGGER.warning("未找到媒体播放器实体，无法播放 TTS")
             return
@@ -122,6 +115,39 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
             blocking=False,
         )
 
+        await self.hass.async_add_executor_job(
+            self._cleanup_old_tts_files, www_dir
+        )
+
+    async def _find_media_player(self) -> str | None:
+        """查找与本设备关联的媒体播放器实体ID。"""
+        from homeassistant.helpers import entity_registry as er
+
+        device_id = self.device_entry.id
+        if not device_id:
+            return None
+
+        entity_reg = er.async_get(self.hass)
+
+        for entry in er.async_entries_for_device(entity_reg, device_id):
+            if entry.domain == "media_player":
+                return entry.entity_id
+
+        for state in self.hass.states.async_all("media_player"):
+            reg_entry = entity_reg.async_get(state.entity_id)
+            if reg_entry and reg_entry.device_id == device_id:
+                return state.entity_id
+
+        device_name = self.device_entry.name
+        if device_name:
+            for state in self.hass.states.async_all("media_player"):
+                if device_name.lower() in state.entity_id.lower():
+                    return state.entity_id
+
+        return None
+
+    def _cleanup_old_tts_files(self, www_dir: Path) -> None:
+        """删除旧的TTS文件，只保留最新10个。"""
         files = sorted(www_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
         for f in files[10:]:
             f.unlink(missing_ok=True)

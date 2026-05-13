@@ -11,15 +11,13 @@ from homeassistant.helpers import intent as ha_intent
 from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
 
-from .const import DOMAIN
+from .const import CONF_DEBOUNCE_MINUTES, DEFAULT_DEBOUNCE_MINUTES, DOMAIN
 from .intent_device_shared import split_actions_by_device
 
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_KEY = "huijian_automations"
 STORAGE_VERSION = 1
-
-DEBOUNCE_MINUTES = 5
 
 
 async def _resolve_entity_id(
@@ -279,9 +277,19 @@ class AutomationManager:
         self._store = get_automation_store(hass)
         self._unsub = None
         self._triggered_cache: dict[str, float] = {}
-        self._debounce_seconds = DEBOUNCE_MINUTES * 60
         self._trigger_logs: list[dict] = []
         self._max_logs = 200
+
+    @property
+    def _debounce_seconds(self) -> float:
+        entries = self._hass.config_entries.async_entries(DOMAIN)
+        if entries:
+            debounce_minutes = entries[0].options.get(
+                CONF_DEBOUNCE_MINUTES, DEFAULT_DEBOUNCE_MINUTES
+            )
+        else:
+            debounce_minutes = DEFAULT_DEBOUNCE_MINUTES
+        return debounce_minutes * 60
 
     @property
     def trigger_logs(self) -> list[dict]:

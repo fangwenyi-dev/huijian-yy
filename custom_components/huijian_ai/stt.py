@@ -26,9 +26,9 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up entities."""
-    async_add_entities([huijianSttEntity(hass, config_entry)])
+    async_add_entities([HuijianSttEntity(hass, config_entry)])
 
-class huijianSttEntity(BaseEntity):
+class HuijianSttEntity(BaseEntity):
     domain = ENTITY_DOMAIN
     opus_channels = 1
     opus_sample_rate = 16000

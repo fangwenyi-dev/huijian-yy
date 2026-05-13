@@ -153,7 +153,7 @@ def find_speaker_area(hass: HomeAssistant, speaker_id: str) -> ar.AreaEntry | No
     area_registry = ar.async_get(hass)
     return area_registry.async_get_area(speaker_device.area_id)
     
-class huijianGetLiveContextIntent(intent.IntentHandler):
+class HuijianGetLiveContextIntent(intent.IntentHandler):
     intent_type = "huijianGetLiveContext"
     description = (
         "Provides real-time information about the CURRENT state, value, or mode of devices, sensors, entities, or areas. "

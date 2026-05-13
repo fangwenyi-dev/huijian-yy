@@ -24,9 +24,9 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up conversation entities."""
-    async_add_entities([huijianConversationEntity(hass, config_entry)])
+    async_add_entities([HuijianConversationEntity(hass, config_entry)])
 
-class huijianConversationEntity(BaseEntity):
+class HuijianConversationEntity(BaseEntity):
     domain = ENTITY_DOMAIN
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry):

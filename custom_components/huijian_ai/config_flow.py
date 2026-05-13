@@ -53,10 +53,14 @@ from homeassistant.util import ulid
 
 from .const import (
     CONF_ALLOW_SERVICE_CALLS,
+    CONF_DEBOUNCE_MINUTES,
     CONF_DEVICE_NAME,
     CONF_NOISE_PSK,
+    CONF_STT_ENTITY_ID,
     CONF_SUBSCRIBE_LOGS,
+    CONF_TTS_ENTITY_ID,
     DEFAULT_ALLOW_SERVICE_CALLS,
+    DEFAULT_DEBOUNCE_MINUTES,
     DEFAULT_NEW_CONFIG_ALLOW_ALLOW_SERVICE_CALLS,
     DEFAULT_PORT,
     DOMAIN,
@@ -1277,6 +1281,24 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     CONF_SUBSCRIBE_LOGS,
                     default=self.config_entry.options.get(CONF_SUBSCRIBE_LOGS, False),
                 ): bool,
+                vol.Optional(
+                    CONF_DEBOUNCE_MINUTES,
+                    default=self.config_entry.options.get(
+                        CONF_DEBOUNCE_MINUTES, DEFAULT_DEBOUNCE_MINUTES
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
+                vol.Optional(
+                    CONF_TTS_ENTITY_ID,
+                    default=self.config_entry.options.get(
+                        CONF_TTS_ENTITY_ID, "tts.huijian_speech"
+                    ),
+                ): str,
+                vol.Optional(
+                    CONF_STT_ENTITY_ID,
+                    default=self.config_entry.options.get(
+                        CONF_STT_ENTITY_ID, "stt.huijian_asr"
+                    ),
+                ): str,
             }
         )
         defaults = dict(self.config_entry.options)

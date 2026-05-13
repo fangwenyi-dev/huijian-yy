@@ -4,7 +4,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
 
 from .intent_adjust_attribute import AdjustDeviceAttributeIntent
-from .intent_live_context import huijianGetLiveContextIntent
+from .intent_live_context import HuijianGetLiveContextIntent
 from .intent_set_mode import SetDeviceModeIntent
 from .intent_turn import TurnDeviceOffIntent, TurnDeviceOnIntent
 from .intent_voice_scene import (HassCreateVoiceSceneIntent,
@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_intents(hass: HomeAssistant):
     """Set up the intents."""
     _LOGGER.info("Register huijian-ai intents begin")
-    intent.async_register(hass, huijianGetLiveContextIntent())
+    intent.async_register(hass, HuijianGetLiveContextIntent())
     intent.async_register(hass, TurnDeviceOnIntent())
     intent.async_register(hass, TurnDeviceOffIntent())
     intent.async_register(hass, SetDeviceModeIntent())

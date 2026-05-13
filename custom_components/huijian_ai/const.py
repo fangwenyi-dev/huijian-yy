@@ -11,9 +11,13 @@ CONF_SUBSCRIBE_LOGS = "subscribe_logs"
 CONF_DEVICE_NAME = "device_name"
 CONF_NOISE_PSK = "noise_psk"
 CONF_BLUETOOTH_MAC_ADDRESS = "bluetooth_mac_address"
+CONF_DEBOUNCE_MINUTES = "debounce_minutes"
+CONF_TTS_ENTITY_ID = "tts_entity_id"
+CONF_STT_ENTITY_ID = "stt_entity_id"
 
 DEFAULT_ALLOW_SERVICE_CALLS = True
 DEFAULT_NEW_CONFIG_ALLOW_ALLOW_SERVICE_CALLS = False
+DEFAULT_DEBOUNCE_MINUTES = 5
 
 DEFAULT_PORT: Final = 6053
 
