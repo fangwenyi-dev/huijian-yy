@@ -63,12 +63,21 @@ def target_parameter_type():
 def get_entity_name(entity_entry: er.RegistryEntry, state: State) -> str:
     if len(entity_entry.aliases) > 0:
         alias = list(entity_entry.aliases)[0]
-        return str(alias) if alias is not None else state.name
+        name = str(alias) if alias is not None else state.name
+        if "ComputedNameType" not in name:
+            return name
     
     if isinstance(entity_entry.name, str):
-        return entity_entry.name if entity_entry.name else state.name
+        name = entity_entry.name if entity_entry.name else state.name
+        if "ComputedNameType" not in name:
+            return name
     
-    return state.name
+    friendly = state.attributes.get("friendly_name", "")
+    if friendly and "ComputedNameType" not in friendly:
+        return friendly
+    if "ComputedNameType" not in state.name:
+        return state.name
+    return state.entity_id
 
 @dataclass
 class AreaInfo:

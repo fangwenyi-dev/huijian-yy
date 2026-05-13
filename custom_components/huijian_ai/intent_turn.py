@@ -32,6 +32,23 @@ class TurnDeviceIntentBase(intent.IntentHandler):
     async def _async_handle(self, intent_obj: intent.Intent, slots: dict[str, Any], service: Literal["turn_on", "turn_off"]) -> JsonObjectType:
         """Get the current state of exposed entities."""
         targets: list[HaTargetItem] = slots.get("target", {}).get("value", [])
+
+        # Window all-devices redirect: when TurnDeviceOn/Off is called with
+        # generic window names ('窗户'/'窗') or window domain without specific
+        # name, redirect to all-window button logic for correct multi-button
+        # handling. LLM sometimes routes "打开展厅所有窗户" to TurnDeviceOn
+        # instead of ControlWindow - this ensures both paths work correctly.
+        for target in targets:
+            area_name = target.get("area", "")
+            for device in target.get("devices", []):
+                domains = device.get("domains", [])
+                name = device.get("name")
+                if self._is_window_all_command(domains, name):
+                    action = "open" if service == "turn_on" else "close"
+                    result = await self._handle_all_windows(intent_obj, area_name, action)
+                    if result["success"]:
+                        return result
+
         error_msg, candidate_entities = await match_intent_entities(intent_obj, targets)
         if error_msg:
             return error_msg
@@ -315,6 +332,39 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             task.cancel()
             await asyncio.wait({task}, timeout=5)
             raise
+
+    @staticmethod
+    def _is_window_all_command(domains: list[str], name: str | None) -> bool:
+        has_window_domain = any(
+            d.lower() in ("window", "windows")
+            for d in (domains if isinstance(domains, list) else [])
+        )
+        if not has_window_domain:
+            return False
+        is_generic_name = name and name.lower().strip() in ("窗户", "窗")
+        no_specific_name = not name
+        return is_generic_name or no_specific_name
+
+    async def _handle_all_windows(self, intent_obj: intent.Intent, area_name: str | None, action: str) -> JsonObjectType:
+        from .intent_window_const import find_all_window_buttons_by_action
+        from .intent_window_control import _press_multi_buttons
+        buttons = find_all_window_buttons_by_action(intent_obj.hass, area_name or "", action)
+        if buttons:
+            results = await _press_multi_buttons(intent_obj.hass, intent_obj.context, action, buttons)
+            _LOGGER.info(
+                "Window all-devices fallback: action=%s, area=%s, buttons=%s",
+                action, area_name, results
+            )
+            return {
+                "success": True,
+                "control_targets": [{"name": "窗户", "area": area_name or ""}],
+                "buttons": results,
+            }
+        _LOGGER.warning(
+            "Window all-devices fallback failed: no %s buttons found in %s",
+            action, area_name
+        )
+        return {"success": False, "error": f"Could not find any {action} buttons in {area_name or 'any area'}"}
 
     @staticmethod
     def _get_button_base_name(name: str) -> str:
