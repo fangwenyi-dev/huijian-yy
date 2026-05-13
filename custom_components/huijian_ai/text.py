@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from functools import partial
 
@@ -11,7 +12,6 @@ from aioesphomeapi import EntityInfo, TextInfo, TextMode as EsphomeTextMode, Tex
 
 from homeassistant.components.text import TextEntity, TextMode
 from homeassistant.core import callback
-from homeassistant.helpers import entity_registry as er
 
 from .entity import (
     EsphomeEntity,
@@ -66,42 +66,47 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
             _LOGGER.warning("TTS 播放失败", exc_info=True)
 
     async def _play_tts(self, text: str) -> None:
-        """使用 edge-tts 生成音频并通过同设备的 media_player 播放。"""
-        ent_reg = er.async_get(self.hass)
-        my_entry = ent_reg.async_get(self.entity_id)
-        if not my_entry or not my_entry.device_id:
-            _LOGGER.warning("无法找到实体 %s 对应的设备", self.entity_id)
-            return
-
-        media_player_entity = None
-        for entry in ent_reg.entities.values():
-            if entry.device_id == my_entry.device_id and entry.domain == "media_player":
-                media_player_entity = entry.entity_id
-                break
-
-        if not media_player_entity:
-            _LOGGER.warning("设备 %s 没有关联的 media_player 实体", my_entry.device_id)
-            return
-
-        import edge_tts
+        """使用 edge-tts 生成 WAV 音频，通过 URL 发送给固件下载播放。"""
         import time
         from pathlib import Path
 
+        import edge_tts
+
         communicate = edge_tts.Communicate(text, "zh-CN-XiaoxiaoNeural")
-        audio = b""
+        mp3_data = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                audio += chunk["data"]
+                mp3_data += chunk["data"]
 
-        if not audio:
+        if not mp3_data:
             _LOGGER.warning("edge-tts 生成的音频为空: %s", text)
             return
 
         www_dir = Path(self.hass.config.path("www"), "huijian_tts")
         www_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"tts_{int(time.time() * 1000)}.mp3"
-        filepath = www_dir / filename
-        filepath.write_bytes(audio)
+
+        timestamp = int(time.time() * 1000)
+        mp3_path = www_dir / f"tts_{timestamp}.mp3"
+        wav_path = www_dir / f"tts_{timestamp}.wav"
+        mp3_path.write_bytes(mp3_data)
+
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-i", str(mp3_path),
+            "-ar", "16000",
+            "-ac", "1",
+            "-sample_fmt", "s16",
+            str(wav_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        mp3_path.unlink(missing_ok=True)
+
+        if not wav_path.exists() or wav_path.stat().st_size == 0:
+            _LOGGER.warning("ffmpeg 转换 WAV 失败")
+            return
 
         from homeassistant.helpers.network import get_url
 
@@ -110,18 +115,10 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
         except Exception:
             base_url = f"http://{self.hass.config.api.host}:{self.hass.http.server_port}"
 
-        url = f"{base_url}/local/huijian_tts/{filename}"
+        url = f"{base_url}/local/huijian_tts/tts_{timestamp}.wav"
 
-        await self.hass.services.async_call(
-            "media_player",
-            "play_media",
-            {
-                "entity_id": media_player_entity,
-                "media_content_id": url,
-                "media_content_type": "audio/mp3",
-                "announce": True,
-            },
-            blocking=False,
+        self._client.text_command(
+            self._key, url, device_id=self._static_info.device_id
         )
 
         files = sorted(www_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
