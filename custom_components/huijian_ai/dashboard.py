@@ -63,7 +63,8 @@ class ESPHomeDashboardManager:
         if not (data := self._data) or not (info := data.get("info")):
             return
         if is_hassio(self._hass):
-            from homeassistant.components.hassio import get_addons_info  # noqa: PLC0415
+            from homeassistant.components.hassio import \
+                get_addons_info  # noqa: PLC0415
 
             if (addons := get_addons_info(self._hass)) is not None and info[
                 "addon_slug"

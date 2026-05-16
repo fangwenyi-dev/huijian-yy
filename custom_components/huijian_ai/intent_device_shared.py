@@ -2,7 +2,22 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-WINDOW_KEYWORDS = ["窗户", "窗", "平推窗", "平开窗", "推拉窗", "内开窗", "外开窗", "天窗", "飘窗", "推拉门", "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗"]
+WINDOW_KEYWORDS = [
+    "窗户",
+    "窗",
+    "平推窗",
+    "平开窗",
+    "推拉窗",
+    "内开窗",
+    "外开窗",
+    "天窗",
+    "飘窗",
+    "推拉门",
+    "内开内倒窗",
+    "单内倒窗",
+    "外装平开窗",
+    "智能窗",
+]
 WINDOW_EXCLUDE_KEYWORDS = ["窗帘"]
 WINDOW_DOMAINS = {"window", "windows"}
 
@@ -61,10 +76,12 @@ def split_actions_by_device(actions: list[dict]) -> list[dict]:
                 window_targets.append({**target, "devices": window_devices})
 
         if normal_targets:
-            split_actions.append({
-                "name": intent_name,
-                "parameters": {**params, "target": normal_targets}
-            })
+            split_actions.append(
+                {
+                    "name": intent_name,
+                    "parameters": {**params, "target": normal_targets},
+                }
+            )
 
         if window_targets:
             action_mapping = {
@@ -73,10 +90,12 @@ def split_actions_by_device(actions: list[dict]) -> list[dict]:
             }
             window_intent = action_mapping.get(intent_name, intent_name)
             window_action = "open" if intent_name == "TurnDeviceOn" else "close"
-            split_actions.append({
-                "name": window_intent,
-                "parameters": {"target": window_targets, "action": window_action}
-            })
+            split_actions.append(
+                {
+                    "name": window_intent,
+                    "parameters": {"target": window_targets, "action": window_action},
+                }
+            )
 
-    _LOGGER.info(f"Split actions: {len(actions)} -> {len(split_actions)}")
+    _LOGGER.info("Split actions: %s -> %s", len(actions), len(split_actions))
     return split_actions

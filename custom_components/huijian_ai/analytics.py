@@ -1,6 +1,7 @@
 """Analytics platform."""
 
-from homeassistant.components.analytics import AnalyticsInput, AnalyticsModifications
+from homeassistant.components.analytics import (AnalyticsInput,
+                                                AnalyticsModifications)
 from homeassistant.core import HomeAssistant
 
 

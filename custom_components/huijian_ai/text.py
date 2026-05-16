@@ -7,21 +7,16 @@ import time
 from functools import partial
 from pathlib import Path
 
-import edge_tts
-
 _LOGGER = logging.getLogger(__name__)
 
-from aioesphomeapi import EntityInfo, TextInfo, TextMode as EsphomeTextMode, TextState
-
+from aioesphomeapi import EntityInfo, TextInfo
+from aioesphomeapi import TextMode as EsphomeTextMode
+from aioesphomeapi import TextState
 from homeassistant.components.text import TextEntity, TextMode
 from homeassistant.core import callback
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_state_property, platform_async_setup_entry)
 from .enum_mapper import EsphomeEnumMapper
 
 PARALLEL_UPDATES = 0
@@ -32,6 +27,35 @@ TEXT_MODES: EsphomeEnumMapper[EsphomeTextMode, TextMode] = EsphomeEnumMapper(
         EsphomeTextMode.PASSWORD: TextMode.PASSWORD,
     }
 )
+
+EDGE_TTS_VOICES = {
+    "zh-CN": "zh-CN-XiaoxiaoNeural",
+    "zh-HK": "zh-HK-HiuGaaiNeural",
+    "zh-TW": "zh-TW-HsiaoChenNeural",
+    "en": "en-US-AriaNeural",
+    "en-US": "en-US-AriaNeural",
+    "en-GB": "en-GB-SoniaNeural",
+    "ja": "ja-JP-NanamiNeural",
+    "ko": "ko-KR-SunHiNeural",
+    "fr": "fr-FR-DeniseNeural",
+    "de": "de-DE-KatjaNeural",
+    "es": "es-ES-AlvaroNeural",
+    "it": "it-IT-ElsaNeural",
+    "pt": "pt-BR-FranciscaNeural",
+    "ru": "ru-RU-SvetlanaNeural",
+    "ar": "ar-SA-ZariyahNeural",
+    "hi": "hi-IN-SwaraNeural",
+    "th": "th-TH-PremwadeeNeural",
+    "vi": "vi-VN-HoaiMyNeural",
+}
+
+
+def _get_edge_tts_voice(hass_language: str) -> str:
+    """根据 HA 语言设置返回合适的 edge-tts 语音角色."""
+    if hass_language in EDGE_TTS_VOICES:
+        return EDGE_TTS_VOICES[hass_language]
+    base_lang = hass_language.split("-")[0] if "-" in hass_language else hass_language
+    return EDGE_TTS_VOICES.get(base_lang, "zh-CN-XiaoxiaoNeural")
 
 
 class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
@@ -58,10 +82,11 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
     async def async_set_value(self, value: str) -> None:
         """Update the current value."""
         static_info = self._static_info
-        if not hasattr(static_info, "object_id") or static_info.object_id != "play_voice_text":
-            self._client.text_command(
-                self._key, value, device_id=static_info.device_id
-            )
+        if (
+            not hasattr(static_info, "object_id")
+            or static_info.object_id != "play_voice_text"
+        ):
+            self._client.text_command(self._key, value, device_id=static_info.device_id)
             return
 
         try:
@@ -71,7 +96,13 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
 
     async def _play_tts(self, text: str) -> None:
         """使用 edge-tts 生成 MP3 音频，通过 media_player 播放。"""
-        communicate = edge_tts.Communicate(text, "zh-CN-XiaoxiaoNeural")
+        try:
+            import edge_tts
+        except ImportError:
+            _LOGGER.warning("edge-tts 未安装，无法播放 TTS")
+            return
+        voice = _get_edge_tts_voice(self.hass.config.language)
+        communicate = edge_tts.Communicate(text, voice)
         mp3_data = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -95,7 +126,9 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
         try:
             base_url = get_url(self.hass, prefer_external=False)
         except Exception:
-            base_url = f"http://{self.hass.config.api.host}:{self.hass.http.server_port}"
+            base_url = (
+                f"http://{self.hass.config.api.host}:{self.hass.http.server_port}"
+            )
 
         url = f"{base_url}/local/huijian_tts/tts_{timestamp}.mp3"
 
@@ -105,7 +138,8 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
             return
 
         await self.hass.services.async_call(
-            "media_player", "play_media",
+            "media_player",
+            "play_media",
             {
                 "entity_id": media_player_entity_id,
                 "media_content_id": url,
@@ -115,9 +149,7 @@ class EsphomeText(EsphomeEntity[TextInfo, TextState], TextEntity):
             blocking=False,
         )
 
-        await self.hass.async_add_executor_job(
-            self._cleanup_old_tts_files, www_dir
-        )
+        await self.hass.async_add_executor_job(self._cleanup_old_tts_files, www_dir)
 
     async def _find_media_player(self) -> str | None:
         """查找与本设备关联的媒体播放器实体ID。"""

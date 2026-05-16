@@ -3,52 +3,43 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterable
-from functools import partial
 import hashlib
 import io
-from itertools import chain
 import json
 import logging
-from pathlib import Path
 import socket
-from typing import Any, cast
 import wave
+from collections.abc import AsyncIterable
+from functools import partial
+from itertools import chain
+from pathlib import Path
+from typing import Any, cast
 
-from aioesphomeapi import (
-    MediaPlayerFormatPurpose,
-    MediaPlayerSupportedFormat,
-    VoiceAssistantAnnounceFinished,
-    VoiceAssistantAudioSettings,
-    VoiceAssistantCommandFlag,
-    VoiceAssistantEventType,
-    VoiceAssistantExternalWakeWord,
-    VoiceAssistantFeature,
-    VoiceAssistantTimerEventType,
-)
 import voluptuous as vol
-from voluptuous.humanize import humanize_error
-
+from aioesphomeapi import (MediaPlayerFormatPurpose,
+                           MediaPlayerSupportedFormat,
+                           VoiceAssistantAnnounceFinished,
+                           VoiceAssistantAudioSettings,
+                           VoiceAssistantCommandFlag, VoiceAssistantEventType,
+                           VoiceAssistantExternalWakeWord,
+                           VoiceAssistantFeature, VoiceAssistantTimerEventType)
 from homeassistant.components import assist_satellite, tts
-from homeassistant.components.assist_pipeline import (
-    PipelineEvent,
-    PipelineEventType,
-    PipelineStage,
-)
+from homeassistant.components.assist_pipeline import (PipelineEvent,
+                                                      PipelineEventType,
+                                                      PipelineStage)
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.components.intent import (
-    TimerEventType,
-    TimerInfo,
-    async_register_timer_handler,
-)
+from homeassistant.components.intent import (TimerEventType, TimerInfo,
+                                             async_register_timer_handler)
 from homeassistant.components.media_player import async_process_play_media_url
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.entity_platform import \
+    AddConfigEntryEntitiesCallback
 from homeassistant.helpers.network import get_url
 from homeassistant.helpers.singleton import singleton
 from homeassistant.util.hass_dict import HassKey
+from voluptuous.humanize import humanize_error
 
 from .const import DOMAIN, WAKE_WORDS_API_PATH, WAKE_WORDS_DIR_NAME
 from .entity import EsphomeAssistEntity, convert_api_error_ha_error
@@ -628,12 +619,12 @@ class EsphomeAssistSatellite(
                         supported_format.sample_rate
                     )
 
-                if supported_format.sample_rate > 0:
+                if supported_format.num_channels > 0:
                     self._attr_tts_options[tts.ATTR_PREFERRED_SAMPLE_CHANNELS] = (
                         supported_format.num_channels
                     )
 
-                if supported_format.sample_rate > 0:
+                if supported_format.sample_bytes > 0:
                     self._attr_tts_options[tts.ATTR_PREFERRED_SAMPLE_BYTES] = (
                         supported_format.sample_bytes
                     )

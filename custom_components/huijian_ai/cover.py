@@ -5,24 +5,16 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from aioesphomeapi import APIVersion, CoverInfo, CoverOperation, CoverState, EntityInfo
-
-from homeassistant.components.cover import (
-    ATTR_POSITION,
-    ATTR_TILT_POSITION,
-    CoverDeviceClass,
-    CoverEntity,
-    CoverEntityFeature,
-)
+from aioesphomeapi import (APIVersion, CoverInfo, CoverOperation, CoverState,
+                           EntityInfo)
+from homeassistant.components.cover import (ATTR_POSITION, ATTR_TILT_POSITION,
+                                            CoverDeviceClass, CoverEntity,
+                                            CoverEntityFeature)
 from homeassistant.core import callback
 from homeassistant.util.enum import try_parse_enum
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_state_property, platform_async_setup_entry)
 
 PARALLEL_UPDATES = 0
 

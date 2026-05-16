@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 from aioesphomeapi import APIClient, DeviceInfo
 from bleak_esphome import connect_scanner
-
 from homeassistant.components.bluetooth import async_register_scanner
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback as hass_callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+from homeassistant.core import callback as hass_callback
 
 from .const import DOMAIN
 from .entry_data import RuntimeEntryData

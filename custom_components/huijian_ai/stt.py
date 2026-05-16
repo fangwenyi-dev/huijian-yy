@@ -1,21 +1,16 @@
 import logging
-from homeassistant.core import HomeAssistant
-from homeassistant.components.stt import (
-    DOMAIN as ENTITY_DOMAIN,
-    SpeechToTextEntity as BaseEntity,
-    AudioCodecs,
-    AudioFormats,
-    AudioChannels,
-    AudioBitRates,
-    AudioSampleRates,
-    SpeechMetadata,
-    SpeechResult,
-    SpeechResultState,
-)
-from homeassistant.helpers import device_registry as dr
-from homeassistant.config_entries import ConfigEntry
 from collections.abc import AsyncIterable
+
 import opuslib_next as opuslib
+from homeassistant.components.stt import DOMAIN as ENTITY_DOMAIN
+from homeassistant.components.stt import (AudioBitRates, AudioChannels,
+                                          AudioCodecs, AudioFormats,
+                                          AudioSampleRates, SpeechMetadata,
+                                          SpeechResult, SpeechResultState)
+from homeassistant.components.stt import SpeechToTextEntity as BaseEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 from .huijian import stt_transport
@@ -24,9 +19,12 @@ from .huijian.audio import wav_to_opus
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities
+):
     """Set up entities."""
     async_add_entities([HuijianSttEntity(hass, config_entry)])
+
 
 class HuijianSttEntity(BaseEntity):
     domain = ENTITY_DOMAIN
@@ -53,8 +51,10 @@ class HuijianSttEntity(BaseEntity):
         self._attr_supported_channels = [x for x in AudioChannels]
         self._attr_supported_bit_rates = [x for x in AudioBitRates]
         self._attr_supported_sample_rates = [x for x in AudioSampleRates]
-        self.opus_encoder = opuslib.Encoder(self.opus_sample_rate, self.opus_channels, opuslib.APPLICATION_VOIP)
-    
+        self.opus_encoder = opuslib.Encoder(
+            self.opus_sample_rate, self.opus_channels, opuslib.APPLICATION_VOIP
+        )
+
     @property
     def supported_languages(self):
         return self._attr_supported_languages
@@ -110,4 +110,4 @@ class HuijianSttEntity(BaseEntity):
             _LOGGER.info("Received response: %s", resp)
             if resp.type in ["stt", "tts"]:
                 text = resp.text
-        return SpeechResult(text, SpeechResultState.SUCCESS) # type: ignore
+        return SpeechResult(text, SpeechResultState.SUCCESS)  # type: ignore

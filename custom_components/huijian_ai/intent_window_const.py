@@ -44,7 +44,7 @@ def extract_window_name(name: str) -> str | None:
     # 通用名称（"所有窗户"、"全部窗"等）不匹配具体窗户类型，返回None触发全窗查找
     generic_names = ["所有窗户", "所有窗", "全部窗户", "全部窗", "每个窗户", "每扇窗户"]
     if any(gn in name_lower for gn in generic_names):
-        _LOGGER.info(f"Detected generic window name '{name}', will use fallback mode")
+        _LOGGER.info("Detected generic window name '%s', will use fallback mode", name)
         return None
     # Check both keys AND values of WINDOW_NAME_MAPPING.
     # e.g. "2号测试窗" → value "窗户" not found, but key "窗" is found → returns "窗户"
@@ -56,7 +56,7 @@ def extract_window_name(name: str) -> str | None:
 
 def _find_standalone_keyword(name_lower: str, keyword_lower: str) -> int | None:
     """Find a keyword as a standalone word (not part of another word) in a string.
-    
+
     Searches ALL occurrences of keyword and returns the first one that passes
     the boundary check (surrounded by spaces or string boundaries).
     This is needed because window names like '内开内倒窗' contain substrings
@@ -68,16 +68,16 @@ def _find_standalone_keyword(name_lower: str, keyword_lower: str) -> int | None:
         if idx == -1:
             return None
         after_idx = idx + len(keyword_lower)
-        after_char = name_lower[after_idx] if after_idx < len(name_lower) else ' '
-        before_char = name_lower[idx - 1] if idx > 0 else ' '
-        if after_char.strip() == '' and before_char.strip() == '':
+        after_char = name_lower[after_idx] if after_idx < len(name_lower) else " "
+        before_char = name_lower[idx - 1] if idx > 0 else " "
+        if after_char.strip() == "" and before_char.strip() == "":
             return idx
         pos = idx + 1
 
 
 def _strip_window_names(text_lower: str) -> str:
     """Remove known window names from text to avoid action keyword conflicts.
-    
+
     e.g. '内开内倒窗' contains '开' (open keyword) and '内倒' (tilt keyword),
     which would interfere with action detection.
     Strips both keys and values from WINDOW_NAME_MAPPING so that shorthand
@@ -108,31 +108,43 @@ def find_action_in_text(text: str) -> str | None:
 
 def is_remove_button(state) -> bool:
     entity_id = state.entity_id.lower()
-    unique_id = getattr(state, 'unique_id', '') or ''
-    name = getattr(state, 'name', '') or ''
-    object_id = state.entity_id.split('.')[-1] if state.entity_id else ''
+    unique_id = getattr(state, "unique_id", "") or ""
+    name = getattr(state, "name", "") or ""
+    object_id = state.entity_id.split(".")[-1] if state.entity_id else ""
     for kw in REMOVE_KEYWORDS:
-        if kw.lower() in entity_id or kw.lower() in unique_id.lower() or kw.lower() in name.lower() or kw.lower() in object_id.lower():
+        if (
+            kw.lower() in entity_id
+            or kw.lower() in unique_id.lower()
+            or kw.lower() in name.lower()
+            or kw.lower() in object_id.lower()
+        ):
             return True
     return False
 
 
-def find_window_buttons(hass, window_name: str, area_name: str | None, original_name: str | None = None) -> dict[str, str]:
-    from homeassistant.helpers import entity_registry as er
+def find_window_buttons(
+    hass, window_name: str, area_name: str | None, original_name: str | None = None
+) -> dict[str, str]:
     from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
 
     target_area_id = None
     if area_name:
         from homeassistant.helpers import area_registry as ar
+
         area_registry = ar.async_get(hass)
         area = area_registry.async_get_area_by_name(area_name)
         if area:
             target_area_id = area.id
 
     result = {}
-    _LOGGER.info(f"Searching buttons: window_name='{window_name}', area_name='{area_name}', target_area_id='{target_area_id}', original_name='{original_name}'")
+    _LOGGER.info(
+        "Searching buttons: window_name='%s', area_name='%s', target_area_id='%s', original_name='%s'",
+        window_name, area_name, target_area_id, original_name,
+    )
 
     button_count = 0
     match_count = 0
@@ -164,7 +176,9 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
     # If the original name is more specific than the extracted window name,
     # also filter by the original name for precise matching
     # e.g., window_name="窗户", original_name="2号测试窗户"
-    use_exact_filter = (original_name and original_name.strip().lower() != window_name_lower)
+    use_exact_filter = (
+        original_name and original_name.strip().lower() != window_name_lower
+    )
     original_name_lower = original_name.strip().lower() if use_exact_filter else None
 
     for state in hass.states.async_all():
@@ -172,7 +186,7 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
             continue
 
         button_count += 1
-        name = getattr(state, 'name', '') or ''
+        name = getattr(state, "name", "") or ""
         entity_id = state.entity_id
         name_lower = name.lower()
 
@@ -185,7 +199,9 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
             if entry_check and entry_check.device_id:
                 device_check = device_registry.async_get(entry_check.device_id)
                 if device_check:
-                    device_display_lower = (device_check.name_by_user or device_check.name or "").lower()
+                    device_display_lower = (
+                        device_check.name_by_user or device_check.name or ""
+                    ).lower()
                     alt_matched = any(alt in device_display_lower for alt in alt_names)
         if not alt_matched:
             continue
@@ -200,7 +216,10 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
                 device = device_registry.async_get(entry.device_id)
                 if device:
                     device_display = (device.name_by_user or device.name or "").lower()
-                    if original_name_lower in device_display or device_display in original_name_lower:
+                    if (
+                        original_name_lower in device_display
+                        or device_display in original_name_lower
+                    ):
                         pass  # device name matches, allow through
                     else:
                         continue
@@ -221,7 +240,7 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
             skip_area_count += 1
             continue
         if target_area_id and not entry.area_id:
-            _LOGGER.debug(f"Including button without area_id: {entity_id} ({name})")
+            _LOGGER.debug("Including button without area_id: %s (%s)", entity_id, name)
 
         for action, keywords in WINDOW_ACTION_MAPPING.items():
             for keyword in keywords:
@@ -229,16 +248,22 @@ def find_window_buttons(hass, window_name: str, area_name: str | None, original_
                 if _find_standalone_keyword(name_lower, keyword_lower) is not None:
                     if action not in result:
                         result[action] = entity_id
-                        _LOGGER.info(f"Found {action} button: {entity_id} (name: {name})")
+                        _LOGGER.info(
+                            "Found %s button: %s (name: %s)", action, entity_id, name
+                        )
                     break
 
-    _LOGGER.info(f"Search summary: total_buttons={button_count}, name_matches={match_count}, skipped_remove={skip_remove_count}, skipped_area={skip_area_count}, result={result}")
+    _LOGGER.info(
+        "Search summary: total_buttons=%s, name_matches=%s, skipped_remove=%s, skipped_area=%s, result=%s",
+        button_count, match_count, skip_remove_count, skip_area_count, result,
+    )
     return result
 
 
 def find_window_buttons_by_area_id(hass, area_id: str | None) -> dict[str, str]:
     """Find all window buttons in a given area by area_id, keyed by action type."""
     from homeassistant.helpers import entity_registry as er
+
     entity_registry = er.async_get(hass)
 
     buttons = {}
@@ -251,8 +276,10 @@ def find_window_buttons_by_area_id(hass, area_id: str | None) -> dict[str, str]:
         if area_id and entry.area_id and entry.area_id != area_id:
             continue
         if area_id and not entry.area_id:
-            _LOGGER.debug(f"find_window_buttons_by_area_id: including button without area_id: {state.entity_id}")
-        name = getattr(state, 'name', '') or ''
+            _LOGGER.debug(
+                "find_window_buttons_by_area_id: including button without area_id: %s", state.entity_id
+            )
+        name = getattr(state, "name", "") or ""
         name_lower = name.lower()
         if is_remove_button(state):
             continue
@@ -266,18 +293,22 @@ def find_window_buttons_by_area_id(hass, area_id: str | None) -> dict[str, str]:
     return buttons
 
 
-def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) -> list[str]:
+def find_all_window_buttons_by_action(
+    hass, area_name: str | None, action: str
+) -> list[str]:
     """Find ALL window buttons matching an action in the given area.
 
     Used when user says 'open all windows' without specifying a window type.
     Returns a list of entity_ids for all matching buttons.
     """
     from homeassistant.helpers import entity_registry as er
+
     entity_registry = er.async_get(hass)
 
     target_area_id = None
     if area_name:
         from homeassistant.helpers import area_registry as ar
+
         area_registry = ar.async_get(hass)
         area = area_registry.async_get_area_by_name(area_name)
         if area:
@@ -293,7 +324,7 @@ def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) 
     for state in hass.states.async_all():
         if state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
             continue
-        name = getattr(state, 'name', '') or ''
+        name = getattr(state, "name", "") or ""
         name_lower = name.lower()
         if is_remove_button(state):
             continue
@@ -303,13 +334,16 @@ def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) 
         if target_area_id and entry.area_id and entry.area_id != target_area_id:
             continue
         if target_area_id and not entry.area_id:
-            _LOGGER.debug(f"Including button without area_id: {state.entity_id} ({name})")
+            _LOGGER.debug(
+                "Including button without area_id: %s (%s)", state.entity_id, name
+            )
 
         # Auto-derive window keywords from WINDOW_NAME_MAPPING
         # so they stay in sync when new window types are added
         window_keywords = sorted(
             set(WINDOW_NAME_MAPPING.keys()) | set(WINDOW_NAME_MAPPING.values()),
-            key=len, reverse=True
+            key=len,
+            reverse=True,
         )
         has_window_keyword = any(kw.lower() in name_lower for kw in window_keywords)
         if not has_window_keyword:
@@ -323,7 +357,9 @@ def find_all_window_buttons_by_action(hass, area_name: str | None, action: str) 
                 if window_type not in seen_window_types:
                     seen_window_types.add(window_type)
                     result.append(state.entity_id)
-                    _LOGGER.info(f"Found all-window button: {state.entity_id} (name: {name})")
+                    _LOGGER.info(
+                        "Found all-window button: %s (name: %s)", state.entity_id, name
+                    )
                 break
 
     return result

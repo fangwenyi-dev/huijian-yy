@@ -2,43 +2,28 @@
 
 from __future__ import annotations
 
-from functools import partial
 import logging
+from functools import partial
 from typing import Any, cast
 from urllib.parse import urlparse
 
-from aioesphomeapi import (
-    EntityInfo,
-    MediaPlayerCommand,
-    MediaPlayerEntityFeature as EspMediaPlayerEntityFeature,
-    MediaPlayerEntityState,
-    MediaPlayerFormatPurpose,
-    MediaPlayerInfo,
-    MediaPlayerState as EspMediaPlayerState,
-    MediaPlayerSupportedFormat,
-)
-
+from aioesphomeapi import EntityInfo, MediaPlayerCommand
+from aioesphomeapi import \
+    MediaPlayerEntityFeature as EspMediaPlayerEntityFeature
+from aioesphomeapi import (MediaPlayerEntityState, MediaPlayerFormatPurpose,
+                           MediaPlayerInfo)
+from aioesphomeapi import MediaPlayerState as EspMediaPlayerState
+from aioesphomeapi import MediaPlayerSupportedFormat
 from homeassistant.components import media_source
 from homeassistant.components.media_player import (
-    ATTR_MEDIA_ANNOUNCE,
-    ATTR_MEDIA_EXTRA,
-    BrowseMedia,
-    MediaPlayerDeviceClass,
-    MediaPlayerEntity,
-    MediaPlayerEntityFeature,
-    MediaPlayerState,
-    MediaType,
-    async_process_play_media_url,
-)
+    ATTR_MEDIA_ANNOUNCE, ATTR_MEDIA_EXTRA, BrowseMedia, MediaPlayerDeviceClass,
+    MediaPlayerEntity, MediaPlayerEntityFeature, MediaPlayerState, MediaType,
+    async_process_play_media_url)
 from homeassistant.core import callback
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_float_state_property,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_float_state_property, esphome_state_property,
+                     platform_async_setup_entry)
 from .enum_mapper import EsphomeEnumMapper
 from .ffmpeg_proxy import async_create_proxy_url
 

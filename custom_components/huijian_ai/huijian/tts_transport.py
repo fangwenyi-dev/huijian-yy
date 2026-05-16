@@ -1,8 +1,8 @@
 import logging
-import anyio
 
-from homeassistant.core import HomeAssistant
+import anyio
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from . import Dict, EntryAuthFailedError, get_entry_data
@@ -18,13 +18,15 @@ def get_entry_transport(hass: HomeAssistant, entry: ConfigEntry) -> "TtsTranspor
     endpoint: str | None = entry.data.get(ATTR_ENDPOINT)
     if not endpoint:
         raise EntryAuthFailedError(hass, entry)
-    
+
     this_data: dict = get_entry_data(hass, entry)
     transport: TtsTransport | None = this_data.get(ATTR_TRANSPORT)
     if transport and transport.endpoint == endpoint and transport.available:
         return transport
-    
-    _LOGGER.info("Creating new TtsTransport for entry: %s %s", entry.entry_id, entry.title)
+
+    _LOGGER.info(
+        "Creating new TtsTransport for entry: %s %s", entry.entry_id, entry.title
+    )
     transport = TtsTransport(hass, entry, endpoint, ATTR_ENDPOINT, _LOGGER)
     this_data[ATTR_TRANSPORT] = transport
     return transport
@@ -51,6 +53,10 @@ class TtsTransport(WsTransport):
         entry = self.entry
         this_data: dict = get_entry_data(self.hass, entry)
         transport: TtsTransport | None = this_data.pop(ATTR_TRANSPORT, None)
-        self.logger.info("Remove entry from TTS transport: title=%s id=%s", entry.title, entry.entry_id)
+        self.logger.info(
+            "Remove entry from TTS transport: title=%s id=%s",
+            entry.title,
+            entry.entry_id,
+        )
         if transport:
             await transport.stop("Remove entry")

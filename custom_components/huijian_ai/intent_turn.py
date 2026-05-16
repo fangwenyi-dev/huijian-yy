@@ -21,50 +21,113 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
-from .intent_helper import EntityInfo, HaTargetItem, match_intent_entities, target_parameter_type
+from .intent_helper import (EntityInfo, HaDeviceItem, HaTargetItem,
+                            match_intent_entities, target_parameter_type)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class TurnDeviceIntentBase(intent.IntentHandler):
+    """Base class for TurnDeviceOn and TurnDeviceOff intent handlers.
+
+    Handles device control with special handling for window devices.
+    When LLM routes window commands to TurnDeviceOn/Off (instead of ControlWindow),
+    this class separates window targets from non-window targets and handles them
+    using button press logic for correct multi-button handling.
+
+    Attributes:
+        service_timeout: Timeout for service calls in seconds.
+    """
+
     service_timeout = 5
 
-    async def _async_handle(self, intent_obj: intent.Intent, slots: dict[str, Any], service: Literal["turn_on", "turn_off"]) -> JsonObjectType:
-        """Get the current state of exposed entities."""
+    async def _async_handle(
+        self,
+        intent_obj: intent.Intent,
+        slots: dict[str, Any],
+        service: Literal["turn_on", "turn_off"],
+    ) -> JsonObjectType:
+        """Handle TurnDeviceOn or TurnDeviceOff intent.
+
+        Args:
+            intent_obj: Home Assistant intent object.
+            slots: Intent slots containing target information.
+            service: Either "turn_on" or "turn_off".
+
+        Returns:
+            JSON object with success status and control targets.
+        """
         targets: list[HaTargetItem] = slots.get("target", {}).get("value", [])
 
-        # Window all-devices redirect: when TurnDeviceOn/Off is called with
-        # generic window names ('窗户'/'窗') or window domain without specific
-        # name, redirect to all-window button logic for correct multi-button
-        # handling. LLM sometimes routes "打开展厅所有窗户" to TurnDeviceOn
-        # instead of ControlWindow - this ensures both paths work correctly.
+        window_device_list: list[tuple[str | None, str | None]] = []
+        non_window_targets: list[HaTargetItem] = []
+
         for target in targets:
             area_name = target.get("area", "")
+            window_devices: list[HaDeviceItem] = []
+            non_window_devices: list[HaDeviceItem] = []
+
             for device in target.get("devices", []):
                 domains = device.get("domains", [])
                 name = device.get("name")
-                if self._is_window_all_command(domains, name):
-                    action = "open" if service == "turn_on" else "close"
-                    result = await self._handle_all_windows(intent_obj, area_name, action)
-                    if result["success"]:
-                        return result
+                if self._is_window_target(domains, name):
+                    window_devices.append(device)
+                else:
+                    non_window_devices.append(device)
 
-        error_msg, candidate_entities = await match_intent_entities(intent_obj, targets)
+            for wd in window_devices:
+                window_device_list.append((area_name, wd.get("name")))
+
+            if non_window_devices:
+                non_window_targets.append(
+                    {
+                        "area": area_name,
+                        "devices": non_window_devices,
+                    }
+                )
+
+        window_control_targets: list[dict[str, str]] = []
+        window_errors: list[str] = []
+
+        for area_name, device_name in window_device_list:
+            result = await self._handle_window_device(
+                intent_obj, area_name, device_name, service
+            )
+            if result and result.get("success"):
+                ct = result.get("control_targets", [{}])[0]
+                window_control_targets.append(
+                    {
+                        "name": ct.get("name", device_name or "窗户"),
+                        "area": area_name or "",
+                    }
+                )
+            else:
+                window_errors.append(
+                    f"{device_name or '窗户'} in {area_name or 'any area'}"
+                )
+
+        if not non_window_targets:
+            if window_control_targets:
+                return {"success": True, "control_targets": window_control_targets}
+            return {
+                "success": False,
+                "error": f"Window control failed: {', '.join(window_errors)}",
+            }
+
+        error_msg, candidate_entities = await match_intent_entities(
+            intent_obj, non_window_targets
+        )
         if error_msg:
+            if window_control_targets:
+                result = {"success": True, "control_targets": window_control_targets}
+                if window_errors:
+                    result["partial_error"] = f"Window: {', '.join(window_errors)}"
+                return result
             return error_msg
         assert candidate_entities
 
-        # Filter button entities for correct action matching.
-        # TurnDeviceOn → only press "开"/"open" buttons;
-        # TurnDeviceOff → only press "关"/"close" buttons.
-        # "内倒" (tilt) buttons are always excluded — use ControlWindow instead.
         candidate_entities = self._filter_button_entities(candidate_entities, service)
 
-        # Cross-domain dedup by device_id.
-        # When LLM sends domain="window", DOMAIN_ALIASES expands to ["cover", "button"],
-        # causing both cover AND button entities of the same device to be returned.
-        # Without dedup, cover.open_cover + button.press both execute → duplicate MQTT commands.
-        # Strategy: if a device has a non-button entity (cover/lock/etc), skip its buttons.
         dedup_device_ids: set[str] = set()
         for item in candidate_entities:
             if item.state.domain not in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
@@ -74,24 +137,28 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         deduped: list[EntityInfo] = []
         for item in candidate_entities:
             device_id = item.entity.device_id
-            if (device_id and device_id in dedup_device_ids
-                    and item.state.domain in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN)):
+            if (
+                device_id
+                and device_id in dedup_device_ids
+                and item.state.domain in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN)
+            ):
                 _LOGGER.info(
                     "Skipping button '%s' (device_id=%s) - "
                     "device already handled by non-button entity",
-                    item.name, device_id
+                    item.name,
+                    device_id,
                 )
                 continue
             deduped.append(item)
         candidate_entities = deduped
 
-        # Execute operation.
-        control_targets = []
-        entity_key_map = set() # for deduplication
+        control_targets = list(window_control_targets)
+        entity_key_map = set()
         for item in candidate_entities:
-            _LOGGER.info(f"Operate target: area={item.area_name} name={item.name} id={item.entity.id}")
+            _LOGGER.info(
+                f"Operate target: area={item.area_name} name={item.name} id={item.entity.id}"
+            )
             await self.handle_match_target(intent_obj, item.state, service)
-            
             entity_key = f"{item.area_name}-{item.name}"
             if entity_key not in entity_key_map:
                 entity_key_map.add(entity_key)
@@ -102,7 +169,9 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             "control_targets": control_targets,
         }
 
-    async def handle_match_target(self, intent_obj: intent.Intent, state: State, service: str):
+    async def handle_match_target(
+        self, intent_obj: intent.Intent, state: State, service: str
+    ):
         hass = intent_obj.hass
         if state.domain in (BUTTON_DOMAIN, INPUT_BUTTON_DOMAIN):
             await self._run_then_background(
@@ -189,7 +258,14 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             if service == SERVICE_TURN_ON:
                 hvac_modes = state.attributes.get("hvac_modes", [])
                 target_mode = None
-                for preferred in ("heat_cool", "heat", "cool", "auto", "fan_only", "dry"):
+                for preferred in (
+                    "heat_cool",
+                    "heat",
+                    "cool",
+                    "auto",
+                    "fan_only",
+                    "dry",
+                ):
                     if preferred in hvac_modes:
                         target_mode = preferred
                         break
@@ -275,7 +351,10 @@ class TurnDeviceIntentBase(intent.IntentHandler):
                         hass.services.async_call(
                             "water_heater",
                             "set_operation_mode",
-                            {ATTR_ENTITY_ID: state.entity_id, "operation_mode": target_mode},
+                            {
+                                ATTR_ENTITY_ID: state.entity_id,
+                                "operation_mode": target_mode,
+                            },
                             context=intent_obj.context,
                             blocking=True,
                         )
@@ -299,10 +378,10 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             raise intent.IntentHandleError(
                 f"Service {service} does not support entity {state.entity_id}"
             )
-        
+
         # Fall back to homeassistant.turn_on/off
         service_data: dict[str, Any] = {ATTR_ENTITY_ID: state.entity_id}
-        _LOGGER.info(f"Operate target fallback: service={service} name={service_data}")
+        _LOGGER.info("Operate target fallback: service=%s name=%s", service, service_data)
         await self._run_then_background(
             hass.async_create_task_internal(
                 hass.services.async_call(
@@ -315,7 +394,7 @@ class TurnDeviceIntentBase(intent.IntentHandler):
                 f"intent_call_service_{state.domain}_{service}",
             )
         )
-            
+
     async def _run_then_background(self, task: asyncio.Task[Any]) -> None:
         """Run task with timeout to (hopefully) catch validation errors.
 
@@ -334,37 +413,130 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             raise
 
     @staticmethod
-    def _is_window_all_command(domains: list[str], name: str | None) -> bool:
-        has_window_domain = any(
+    def _is_window_target(domains: list[str], name: str | None) -> bool:
+        """Check if a device target is a window device.
+
+        Detects window devices by checking either:
+        1. Domain contains "window" or "windows"
+        2. Name contains any window type keyword from WINDOW_NAME_MAPPING
+
+        Args:
+            domains: List of domain strings from LLM.
+            name: Device name from LLM.
+
+        Returns:
+            True if the target is a window device, False otherwise.
+        """
+        if any(
             d.lower() in ("window", "windows")
             for d in (domains if isinstance(domains, list) else [])
-        )
-        if not has_window_domain:
-            return False
-        is_generic_name = name and name.lower().strip() in ("窗户", "窗")
-        no_specific_name = not name
-        return is_generic_name or no_specific_name
+        ):
+            return True
+        if name:
+            from .intent_window_const import WINDOW_NAME_MAPPING
 
-    async def _handle_all_windows(self, intent_obj: intent.Intent, area_name: str | None, action: str) -> JsonObjectType:
-        from .intent_window_const import find_all_window_buttons_by_action
+            name_lower = name.lower().strip()
+            for key, value in WINDOW_NAME_MAPPING.items():
+                if key.lower() in name_lower or value.lower() in name_lower:
+                    return True
+        return False
+
+    async def _handle_window_device(
+        self,
+        intent_obj: intent.Intent,
+        area_name: str | None,
+        device_name: str | None,
+        service: str,
+    ) -> JsonObjectType | None:
+        """Handle window device control via button press.
+
+        Routes window commands to the appropriate button press logic.
+        For generic window names ("窗户", "窗"), finds all window buttons in the area.
+        For specific window types, finds the matching button entity.
+
+        Args:
+            intent_obj: Home Assistant intent object.
+            area_name: Area name where the window is located.
+            device_name: Device name from LLM (may be specific or generic).
+            service: "turn_on" or "turn_off".
+
+        Returns:
+            JSON object with success status if successful, None otherwise.
+        """
+        from .intent_window_const import (extract_window_name,
+                                          find_all_window_buttons_by_action,
+                                          find_window_buttons)
         from .intent_window_control import _press_multi_buttons
-        buttons = find_all_window_buttons_by_action(intent_obj.hass, area_name or "", action)
-        if buttons:
-            results = await _press_multi_buttons(intent_obj.hass, intent_obj.context, action, buttons)
-            _LOGGER.info(
-                "Window all-devices fallback: action=%s, area=%s, buttons=%s",
-                action, area_name, results
-            )
-            return {
-                "success": True,
-                "control_targets": [{"name": "窗户", "area": area_name or ""}],
-                "buttons": results,
-            }
-        _LOGGER.warning(
-            "Window all-devices fallback failed: no %s buttons found in %s",
-            action, area_name
+
+        action = "open" if service == "turn_on" else "close"
+
+        window_name = extract_window_name(device_name or "")
+
+        is_all_ref = (
+            window_name
+            and device_name
+            and device_name.strip().lower() == window_name.lower()
+            and window_name.lower() in ("窗户", "窗")
         )
-        return {"success": False, "error": f"Could not find any {action} buttons in {area_name or 'any area'}"}
+        if not window_name or is_all_ref:
+            buttons = find_all_window_buttons_by_action(
+                intent_obj.hass, area_name or "", action
+            )
+            if buttons:
+                results = await _press_multi_buttons(
+                    intent_obj.hass, intent_obj.context, action, buttons
+                )
+                _LOGGER.info(
+                    "Window all-devices via TurnDeviceOn: action=%s, area=%s, buttons=%s",
+                    action,
+                    area_name,
+                    results,
+                )
+                return {
+                    "success": True,
+                    "control_targets": [{"name": "窗户", "area": area_name or ""}],
+                    "buttons": results,
+                }
+            return None
+
+        button_map = find_window_buttons(
+            intent_obj.hass, window_name, area_name, original_name=device_name
+        )
+
+        if action not in button_map and area_name:
+            button_map = find_window_buttons(
+                intent_obj.hass, window_name, None, original_name=device_name
+            )
+
+        if action in button_map:
+            button_entity_id = button_map[action]
+            try:
+                await intent_obj.hass.services.async_call(
+                    BUTTON_DOMAIN,
+                    SERVICE_PRESS_BUTTON,
+                    {ATTR_ENTITY_ID: button_entity_id},
+                    context=intent_obj.context,
+                    blocking=True,
+                )
+                _LOGGER.info(
+                    "Window specific via TurnDeviceOn: pressed %s for %s in %s",
+                    button_entity_id,
+                    window_name,
+                    area_name,
+                )
+                return {
+                    "success": True,
+                    "control_targets": [{"name": window_name, "area": area_name or ""}],
+                }
+            except Exception as err:
+                _LOGGER.error(
+                    "Window specific via TurnDeviceOn: press failed %s: %s",
+                    button_entity_id,
+                    err,
+                )
+                return None
+
+        return None
 
     @staticmethod
     def _get_button_base_name(name: str) -> str:
@@ -372,14 +544,21 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         action_keywords = ["开", "关", "内倒", "open", "close", "停止", "stop", "pause"]
         for kw in action_keywords:
             if name_lower.endswith(f" {kw}"):
-                return name[:-(len(kw) + 1)]
+                return name[: -(len(kw) + 1)]
         # 处理纯动作名称（无"设备名 "前缀的网关按钮）
         # 网关集成因 has_entity_name=True，实体名可能只有 "开启" 而非 "设备名 开启"
         _PURE_ACTION_NAMES = {
-            "开启", "打开", "open",
-            "关闭", "close",
-            "暂停", "停止", "pause", "stop",
-            "内倒", "内岛",
+            "开启",
+            "打开",
+            "open",
+            "关闭",
+            "close",
+            "暂停",
+            "停止",
+            "pause",
+            "stop",
+            "内倒",
+            "内岛",
         }
         if name_lower in _PURE_ACTION_NAMES:
             return "__action__"
@@ -403,7 +582,9 @@ class TurnDeviceIntentBase(intent.IntentHandler):
                 return True
         return False
 
-    def _filter_button_entities(self, entities: list[EntityInfo], service: str) -> list[EntityInfo]:
+    def _filter_button_entities(
+        self, entities: list[EntityInfo], service: str
+    ) -> list[EntityInfo]:
         result: list[EntityInfo] = []
         button_groups: dict[str, list[EntityInfo]] = {}
 
@@ -414,7 +595,9 @@ class TurnDeviceIntentBase(intent.IntentHandler):
 
             name_lower = item.name.lower()
             if "内倒" in name_lower or "内岛" in name_lower:
-                _LOGGER.info("Skipping tilt button '%s' - use ControlWindow instead", item.name)
+                _LOGGER.info(
+                    "Skipping tilt button '%s' - use ControlWindow instead", item.name
+                )
                 continue
 
             base_name = self._get_button_base_name(item.name)
@@ -428,13 +611,21 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             else:
                 if service == SERVICE_TURN_ON:
                     preferred = next(
-                        (e for e in group if self._button_matches_action(e.name, ["开", "open"])),
-                        None
+                        (
+                            e
+                            for e in group
+                            if self._button_matches_action(e.name, ["开", "open"])
+                        ),
+                        None,
                     )
                 else:
                     preferred = next(
-                        (e for e in group if self._button_matches_action(e.name, ["关", "close"])),
-                        None
+                        (
+                            e
+                            for e in group
+                            if self._button_matches_action(e.name, ["关", "close"])
+                        ),
+                        None,
                     )
 
                 if preferred:
@@ -449,26 +640,24 @@ class TurnDeviceOnIntent(TurnDeviceIntentBase):
     intent_type = "TurnDeviceOn"
     description = (
         "Turns on/opens/presses a device. "
-        "Use for: turning on lights (e.g., 'turn on bedroom light', '打开卧室筒灯'), "
-        "pressing buttons (e.g., 'press the scene button', '按场景按钮'), "
-        "opening covers/curtains (e.g., 'open the curtain', '打开窗帘'). "
-        "For window open/close/tilt commands, use the ControlWindow intent instead. "
-        "Target should include device name and area when specified, "
-        "e.g., target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
+        "Use for: lights (e.g., '打开卧室筒灯'), buttons (e.g., '按场景按钮'), "
+        "covers/curtains (e.g., '打开窗帘'), climate/lock/valve/vacuum/alarm. "
+        "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
+        "Target format: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
     )
     service_timeout = 10
-    
+
     @property
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
         return {
             vol.Required("target"): target_parameter_type(),
         }
-    
-    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore
+
+    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:  # type: ignore
         """Get the current state of exposed entities."""
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"TurnDeviceOn slots={slots}")
+        _LOGGER.info("TurnDeviceOn slots=%s", slots)
         return await super()._async_handle(intent_obj, slots, "turn_on")
 
 
@@ -476,24 +665,22 @@ class TurnDeviceOffIntent(TurnDeviceIntentBase):
     intent_type = "TurnDeviceOff"
     description = (
         "Turns off/closes a device. "
-        "Use for: turning off lights (e.g., 'turn off bedroom light', '关闭卧室筒灯'), "
-        "closing covers/curtains (e.g., 'close the curtain', '关闭窗帘'). "
-        "For window open/close/tilt commands, use the ControlWindow intent instead. "
-        "Target should include device name and area when specified, "
-        "e.g., target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
+        "Use for: lights (e.g., '关闭卧室筒灯'), covers/curtains (e.g., '关闭窗帘'), "
+        "climate/lock/valve/vacuum/alarm. "
+        "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
+        "Target format: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
     )
     service_timeout = 10
-    
+
     @property
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
         return {
             vol.Required("target"): target_parameter_type(),
         }
-    
-    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore
+
+    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:  # type: ignore
         """Get the current state of exposed entities."""
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"TurnDeviceOff slots={slots}")
+        _LOGGER.info("TurnDeviceOff slots=%s", slots)
         return await super()._async_handle(intent_obj, slots, "turn_off")
-    

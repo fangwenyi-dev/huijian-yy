@@ -4,23 +4,16 @@ from __future__ import annotations
 
 from functools import partial
 
-from aioesphomeapi import (
-    EntityInfo,
-    NumberInfo,
-    NumberMode as EsphomeNumberMode,
-    NumberState,
-)
-
-from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
+from aioesphomeapi import EntityInfo, NumberInfo
+from aioesphomeapi import NumberMode as EsphomeNumberMode
+from aioesphomeapi import NumberState
+from homeassistant.components.number import (NumberDeviceClass, NumberEntity,
+                                             NumberMode)
 from homeassistant.core import callback
 from homeassistant.util.enum import try_parse_enum
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_float_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_float_state_property, platform_async_setup_entry)
 from .enum_mapper import EsphomeEnumMapper
 
 PARALLEL_UPDATES = 0

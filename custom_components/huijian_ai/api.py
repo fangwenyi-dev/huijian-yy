@@ -1,22 +1,24 @@
-import logging
 import html as html_mod
-from pathlib import Path
+import logging
 from datetime import datetime
+from pathlib import Path
+
 from aiohttp import web
 from homeassistant.const import ATTR_FRIENDLY_NAME
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.http import HomeAssistantView, KEY_HASS
 from homeassistant.helpers import entity_registry as er
-
-from .intent_voice_scene import get_voice_scene_store
-from .intent_automation import get_automation_store, get_automation_manager
-from .const import DOMAIN
 from homeassistant.helpers import intent as ha_intent
+from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
+
+from .const import DOMAIN
+from .intent_automation import get_automation_manager, get_automation_store
+from .intent_voice_scene import get_voice_scene_store
 
 _LOGGER = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _TEMPLATE_CACHE: dict[str, str] = {}
+
 
 def _load_template(filename: str) -> str:
     if filename not in _TEMPLATE_CACHE:
@@ -56,7 +58,7 @@ def _extract_device_info(action: dict) -> str:
             elif name:
                 device_info_parts.append(f"{name}({','.join(domains)})")
             else:
-                device_info_parts.append('/'.join(domains))
+                device_info_parts.append("/".join(domains))
 
     if not device_info_parts:
         return intent_name
@@ -85,7 +87,7 @@ def _get_action_summary(action: dict) -> str:
             elif name:
                 summaries.append(f"{name}")
             else:
-                summaries.append('/'.join(domains) if domains else "")
+                summaries.append("/".join(domains) if domains else "")
 
     return f"{intent_name} {', '.join(filter(None, summaries))}"
 
@@ -108,25 +110,21 @@ class VoiceScenesListView(HomeAssistantView):
                 device_details = [_extract_device_info(a) for a in actions]
                 action_summaries = [_get_action_summary(a) for a in actions]
 
-                scene_list.append({
-                    "scene_id": scene.get("scene_id"),
-                    "trigger_phrase": scene.get("trigger_phrase"),
-                    "action_count": len(actions),
-                    "device_details": device_details,
-                    "action_summaries": action_summaries,
-                    "created_at": scene.get("created_at")
-                })
+                scene_list.append(
+                    {
+                        "scene_id": scene.get("scene_id"),
+                        "trigger_phrase": scene.get("trigger_phrase"),
+                        "action_count": len(actions),
+                        "device_details": device_details,
+                        "action_summaries": action_summaries,
+                        "created_at": scene.get("created_at"),
+                    }
+                )
 
-            return self.json({
-                "success": True,
-                "scenes": scene_list
-            })
+            return self.json({"success": True, "scenes": scene_list})
         except Exception as e:
-            _LOGGER.error(f"Failed to get voice scenes: {e}")
-            return self.json({
-                "success": False,
-                "error": str(e)
-            }, 500)
+            _LOGGER.error("Failed to get voice scenes: %s", e)
+            return self.json({"success": False, "error": str(e)}, 500)
 
 
 class VoiceSceneDeleteView(HomeAssistantView):
@@ -142,21 +140,12 @@ class VoiceSceneDeleteView(HomeAssistantView):
             success, message = await store.delete_scene(scene_id=scene_id)
 
             if success:
-                return self.json({
-                    "success": True,
-                    "message": message
-                })
+                return self.json({"success": True, "message": message})
             else:
-                return self.json({
-                    "success": False,
-                    "error": message
-                }, 404)
+                return self.json({"success": False, "error": message}, 404)
         except Exception as e:
-            _LOGGER.error(f"Failed to delete voice scene: {e}")
-            return self.json({
-                "success": False,
-                "error": str(e)
-            }, 500)
+            _LOGGER.error("Failed to delete voice scene: %s", e)
+            return self.json({"success": False, "error": str(e)}, 500)
 
     async def put(self, request: web.Request, scene_id: str):
         """Update a voice scene's trigger phrase and/or actions."""
@@ -169,17 +158,17 @@ class VoiceSceneDeleteView(HomeAssistantView):
                 trigger_phrase=body.get("trigger_phrase"),
                 actions=body.get("actions"),
             )
-            return self.json({
-                "success": success,
-                "message": message if success else None,
-                "error": message if not success else None,
-            }, 200 if success else 400)
+            return self.json(
+                {
+                    "success": success,
+                    "message": message if success else None,
+                    "error": message if not success else None,
+                },
+                200 if success else 400,
+            )
         except Exception as e:
-            _LOGGER.error(f"Failed to update voice scene: {e}")
-            return self.json({
-                "success": False,
-                "error": str(e)
-            }, 500)
+            _LOGGER.error("Failed to update voice scene: %s", e)
+            return self.json({"success": False, "error": str(e)}, 500)
 
 
 class AutomationLogView(HomeAssistantView):
@@ -208,7 +197,9 @@ class TestSceneView(HomeAssistantView):
             return self.json({"error": "trigger_phrase is required"}, status_code=400)
         try:
             result = await ha_intent.async_handle(
-                request.app[KEY_HASS], DOMAIN, "HassTriggerVoiceScene",
+                request.app[KEY_HASS],
+                DOMAIN,
+                "HassTriggerVoiceScene",
                 slots={"trigger_phrase": {"value": trigger_phrase}},
             )
             return self.json({"success": True, "result": str(result)})
@@ -310,7 +301,9 @@ class CombinedManageView(HomeAssistantView):
                 cond_parts.append(f"> {above}度")
             if below is not None:
                 cond_parts.append(f"< {below}度")
-            trigger_display = f"{friendly} {'、'.join(cond_parts)}" if cond_parts else friendly
+            trigger_display = (
+                f"{friendly} {'、'.join(cond_parts)}" if cond_parts else friendly
+            )
 
             created = auto.get("created_at", "")
             created_display = ""
@@ -325,7 +318,9 @@ class CombinedManageView(HomeAssistantView):
             trigger_info = " | 尚未触发"
             if last_triggered:
                 try:
-                    dt = datetime.fromisoformat(str(last_triggered).replace("Z", "+00:00"))
+                    dt = datetime.fromisoformat(
+                        str(last_triggered).replace("Z", "+00:00")
+                    )
                     trigger_info = f" | 上次触发: {dt.strftime('%Y-%m-%d %H:%M')}"
                 except Exception:
                     trigger_info = " | 已触发"
@@ -362,12 +357,14 @@ class CombinedManageView(HomeAssistantView):
             if has_scenes:
                 parts += '<div class="section-title">语音场景</div>' + scene_cards_html
             if has_autos:
-                parts += '<div class="section-title">传感器自动化</div>' + auto_cards_html
+                parts += (
+                    '<div class="section-title">传感器自动化</div>' + auto_cards_html
+                )
             content_html = parts
 
         template = _load_template("manage.html")
         html_content = template.replace("{content_html}", content_html)
-        return web.Response(text=html_content, content_type='text/html')
+        return web.Response(text=html_content, content_type="text/html")
 
 
 def _entity_id_to_friendly(hass: HomeAssistant, entity_id: str) -> str:
@@ -417,7 +414,7 @@ def _action_to_text(action: dict) -> str:
             elif name:
                 device_parts.append(name)
             else:
-                device_parts.append('/'.join(domains))
+                device_parts.append("/".join(domains))
 
     if device_parts:
         return f"{action_text}{'、'.join(device_parts)}"
@@ -437,7 +434,9 @@ def _trigger_to_text(trigger: dict) -> str:
     return f"{entity_id}{condition}"
 
 
-def _extract_automation_info(automation: dict, hass: HomeAssistant | None = None) -> dict:
+def _extract_automation_info(
+    automation: dict, hass: HomeAssistant | None = None
+) -> dict:
     """Extract automation info for display with user-friendly names."""
     trigger = automation.get("trigger", {})
     actions = automation.get("actions", [])
@@ -455,7 +454,11 @@ def _extract_automation_info(automation: dict, hass: HomeAssistant | None = None
     if below is not None:
         condition_parts.append(f"< {below}度")
 
-    trigger_display = f"{friendly_name} {'、'.join(condition_parts)}" if condition_parts else friendly_name
+    trigger_display = (
+        f"{friendly_name} {'、'.join(condition_parts)}"
+        if condition_parts
+        else friendly_name
+    )
 
     action_summaries = [_action_to_text(a) for a in actions]
 
@@ -486,16 +489,10 @@ class AutomationsListView(HomeAssistantView):
 
             automation_list = [_extract_automation_info(a, hass) for a in automations]
 
-            return self.json({
-                "success": True,
-                "automations": automation_list
-            })
+            return self.json({"success": True, "automations": automation_list})
         except Exception as e:
-            _LOGGER.error(f"Failed to get automations: {e}")
-            return self.json({
-                "success": False,
-                "error": str(e)
-            }, 500)
+            _LOGGER.error("Failed to get automations: %s", e)
+            return self.json({"success": False, "error": str(e)}, 500)
 
 
 class AutomationDeleteView(HomeAssistantView):
@@ -511,21 +508,12 @@ class AutomationDeleteView(HomeAssistantView):
             success, message = await store.delete_automation(automation_id)
 
             if success:
-                return self.json({
-                    "success": True,
-                    "message": message
-                })
+                return self.json({"success": True, "message": message})
             else:
-                return self.json({
-                    "success": False,
-                    "error": message
-                }, 404)
+                return self.json({"success": False, "error": message}, 404)
         except Exception as e:
-            _LOGGER.error(f"Failed to delete automation: {e}")
-            return self.json({
-                "success": False,
-                "error": str(e)
-            }, 500)
+            _LOGGER.error("Failed to delete automation: %s", e)
+            return self.json({"success": False, "error": str(e)}, 500)
 
     async def put(self, request: web.Request, automation_id: str):
         """Update an automation's trigger and/or actions."""
@@ -535,31 +523,31 @@ class AutomationDeleteView(HomeAssistantView):
             store = get_automation_store(hass)
             existing = await store.get_automation(automation_id)
             if not existing:
-                return self.json({
-                    "success": False,
-                    "error": f"未找到自动化ID'{automation_id}'"
-                }, 404)
+                return self.json(
+                    {"success": False, "error": f"未找到自动化ID'{automation_id}'"}, 404
+                )
 
             trigger = body.get("trigger")
             actions = body.get("actions")
             if not trigger and not actions:
-                return self.json({
-                    "success": False,
-                    "error": "请提供要修改的trigger或actions"
-                }, 400)
+                return self.json(
+                    {"success": False, "error": "请提供要修改的trigger或actions"}, 400
+                )
 
-            success, message = await store.update_automation(automation_id, trigger, actions)
-            return self.json({
-                "success": success,
-                "message": message if success else None,
-                "error": message if not success else None,
-            }, 200 if success else 400)
+            success, message = await store.update_automation(
+                automation_id, trigger, actions
+            )
+            return self.json(
+                {
+                    "success": success,
+                    "message": message if success else None,
+                    "error": message if not success else None,
+                },
+                200 if success else 400,
+            )
         except Exception as e:
-            _LOGGER.error(f"Failed to update automation: {e}")
-            return self.json({
-                "success": False,
-                "error": str(e)
-            }, 500)
+            _LOGGER.error("Failed to update automation: %s", e)
+            return self.json({"success": False, "error": str(e)}, 500)
 
 
 class AutomationsManageView(HomeAssistantView):
@@ -569,4 +557,4 @@ class AutomationsManageView(HomeAssistantView):
 
     async def get(self, request: web.Request):
         html_content = _load_template("automations.html")
-        return web.Response(text=html_content, content_type='text/html')
+        return web.Response(text=html_content, content_type="text/html")

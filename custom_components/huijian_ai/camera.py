@@ -9,7 +9,6 @@ from typing import Any
 
 from aioesphomeapi import CameraInfo, CameraState
 from aiohttp import web
-
 from homeassistant.components import camera
 from homeassistant.components.camera import Camera
 from homeassistant.core import callback

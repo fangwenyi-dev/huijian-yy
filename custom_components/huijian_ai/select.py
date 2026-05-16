@@ -5,26 +5,22 @@ from __future__ import annotations
 from dataclasses import replace
 
 from aioesphomeapi import EntityInfo, SelectInfo, SelectState
-
-from homeassistant.components.assist_pipeline import (
-    AssistPipelineSelect,
-    VadSensitivitySelect,
-)
-from homeassistant.components.assist_satellite import AssistSatelliteConfiguration
-from homeassistant.components.select import SelectEntity, SelectEntityDescription
+from homeassistant.components.assist_pipeline import (AssistPipelineSelect,
+                                                      VadSensitivitySelect)
+from homeassistant.components.assist_satellite import \
+    AssistSatelliteConfiguration
+from homeassistant.components.select import (SelectEntity,
+                                             SelectEntityDescription)
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import restore_state
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.entity_platform import \
+    AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN, NO_WAKE_WORD
-from .entity import (
-    EsphomeAssistEntity,
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeAssistEntity, EsphomeEntity,
+                     convert_api_error_ha_error, esphome_state_property,
+                     platform_async_setup_entry)
 from .entry_data import ESPHomeConfigEntry, RuntimeEntryData
 
 PARALLEL_UPDATES = 0

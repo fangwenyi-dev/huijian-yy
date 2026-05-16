@@ -4,6 +4,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
 
 from .intent_adjust_attribute import AdjustDeviceAttributeIntent
+from .intent_automation import (HassCreateAutomationIntent,
+                                HassDeleteAutomationIntent,
+                                HassListAutomationsIntent,
+                                HassUpdateAutomationIntent)
 from .intent_live_context import HuijianGetLiveContextIntent
 from .intent_set_mode import SetDeviceModeIntent
 from .intent_turn import TurnDeviceOffIntent, TurnDeviceOnIntent
@@ -12,10 +16,6 @@ from .intent_voice_scene import (HassCreateVoiceSceneIntent,
                                  HassListVoiceScenesIntent,
                                  HassTriggerVoiceSceneIntent)
 from .intent_window_control import ControlWindowIntent
-from .intent_automation import (HassCreateAutomationIntent,
-                                HassDeleteAutomationIntent,
-                                HassListAutomationsIntent,
-                                HassUpdateAutomationIntent)
 
 _LOGGER = logging.getLogger(__name__)
 

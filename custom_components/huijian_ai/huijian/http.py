@@ -1,12 +1,17 @@
 import hashlib
+import hmac
+import json
 import logging
+
 from aiohttp import web
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.http import HomeAssistantView, KEY_HASS
+from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
+
 from ..const import CONF_STT_ENTITY_ID, CONF_TTS_ENTITY_ID, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_https(hass: HomeAssistant):
     this_data = hass.data.setdefault(DOMAIN, {})
@@ -57,12 +62,28 @@ class HuijianSetupView(HuijianHttpView):
             return self.json_message("uuid missing", 400)
         if uuid not in this_data:
             return self.json_message("uuid invalid", 400)
-        
+
         setup_data = await request.json() or {}
+
+        # Verify signature using UUID as shared secret
+        # If no signature is provided, fall back to UUID-only check
+        # for backward compatibility with existing clients
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header:
+            expected_sign = hmac.new(
+                uuid.encode("utf-8"),
+                json.dumps(setup_data, separators=(",", ":")).encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            if auth_header != expected_sign:
+                _LOGGER.warning("Setup request with invalid signature for uuid=%s", uuid)
+                return self.json_message("invalid signature", 401)
+
         _LOGGER.info("Setup qrcode from miniprogram: %s", setup_data)
-        
+
         this_data[uuid] = setup_data
         return self.json_message("ok")
+
 
 class HuijianRemoveView(HuijianHttpView):
     url = "/api/huijian-ai/remove"
@@ -79,6 +100,7 @@ class HuijianRemoveView(HuijianHttpView):
         _LOGGER.info("Remove entry: %s", entry.entry_id)
         await hass.config_entries.async_remove(entry.entry_id)
         return self.json_message("ok")
+
 
 class HuijianSetNameView(HuijianHttpView):
     url = "/api/huijian-ai/update/speakname"
@@ -102,6 +124,7 @@ class HuijianSetNameView(HuijianHttpView):
         device_registry.async_update_device(device_entry.id, name=name)
         hass.config_entries.async_update_entry(entry, title=name)
         return self.json_message("ok")
+
 
 class HuijianTtsSttView(HuijianHttpView):
     requires_auth = True
@@ -136,6 +159,7 @@ class HuijianTtsSttView(HuijianHttpView):
             return self.json_message("stt entity not found", 400)
 
         from homeassistant.components import stt
+
         from .audio import async_convert_audio
 
         metadata = stt.SpeechMetadata(
@@ -147,33 +171,37 @@ class HuijianTtsSttView(HuijianHttpView):
             channel=stt.AudioChannels.CHANNEL_MONO,
         )
         converting = async_convert_audio(
-            hass, stream.async_stream_result(), stream.extension,
+            hass,
+            stream.async_stream_result(),
+            stream.extension,
             to_extension=metadata.format.value,
             to_sample_rate=metadata.sample_rate.value,
         )
         result = await stt_entity.async_process_audio_stream(metadata, converting)
-        return self.json({
-            "text": result.text,
-            "result": result.result,
-        })
+        return self.json(
+            {
+                "text": result.text,
+                "result": result.result,
+            }
+        )
 
 
 def calculate_sign(uri, params, mac, salt):
     """
     签名算法:
-    1. n = md5(uri)
-    2. 拼接参数字符串并计算 m = md5(参数字符串)
-    3. response = md5(m + n + mac + salt)
+    1. n = sha256(uri)
+    2. 拼接参数字符串并计算 m = sha256(参数字符串)
+    3. response = sha256(m + n + mac + salt)
     """
-    # 步骤1: 计算 n = md5(uri)
-    n = hashlib.md5(uri.encode('utf-8')).hexdigest()
+    # 步骤1: 计算 n = sha256(uri)
+    n = hashlib.sha256(uri.encode("utf-8")).hexdigest()
 
-    # 步骤2: 拼接参数并计算 m = md5(参数字符串)
+    # 步骤2: 拼接参数并计算 m = sha256(参数字符串)
     # 将参数排序后拼接成 key=value 格式
     sorted_params = sorted(params.items(), key=lambda x: x[0])
-    param_str = '&'.join([f"{k}={v}" for k, v in sorted_params])
-    m = hashlib.md5(param_str.encode('utf-8')).hexdigest()
+    param_str = "&".join([f"{k}={v}" for k, v in sorted_params])
+    m = hashlib.sha256(param_str.encode("utf-8")).hexdigest()
 
     # 步骤3: 计算最终摘要
     response_str = f"{m}{n}{mac}{salt}"
-    return hashlib.md5(response_str.encode('utf-8')).hexdigest()
+    return hashlib.sha256(response_str.encode("utf-8")).hexdigest()

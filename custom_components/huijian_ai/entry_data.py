@@ -3,58 +3,33 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
-import logging
 from operator import delitem
 from typing import TYPE_CHECKING, Any, Final, TypedDict, cast
 
-from aioesphomeapi import (
-    COMPONENT_TYPE_TO_INFO,
-    AlarmControlPanelInfo,
-    APIClient,
-    APIVersion,
-    BinarySensorInfo,
-    CameraInfo,
-    CameraState,
-    ClimateInfo,
-    CoverInfo,
-    DateInfo,
-    DateTimeInfo,
-    DeviceInfo,
-    EntityInfo,
-    EntityState,
-    Event,
-    EventInfo,
-    FanInfo,
-    LightInfo,
-    LockInfo,
-    MediaPlayerInfo,
-    MediaPlayerSupportedFormat,
-    NumberInfo,
-    SelectInfo,
-    SensorInfo,
-    SensorState,
-    SwitchInfo,
-    TextInfo,
-    TextSensorInfo,
-    TimeInfo,
-    UpdateInfo,
-    UserService,
-    ValveInfo,
-    build_unique_id,
-)
+from aioesphomeapi import (COMPONENT_TYPE_TO_INFO, AlarmControlPanelInfo,
+                           APIClient, APIVersion, BinarySensorInfo, CameraInfo,
+                           CameraState, ClimateInfo, CoverInfo, DateInfo,
+                           DateTimeInfo, DeviceInfo, EntityInfo, EntityState,
+                           Event, EventInfo, FanInfo, LightInfo, LockInfo,
+                           MediaPlayerInfo, MediaPlayerSupportedFormat,
+                           NumberInfo, SelectInfo, SensorInfo, SensorState,
+                           SwitchInfo, TextInfo, TextSensorInfo, TimeInfo,
+                           UpdateInfo, UserService, ValveInfo, build_unique_id)
 from aioesphomeapi.model import ButtonInfo
 from bleak_esphome.backend.device import ESPHomeBluetoothDevice
-
 from homeassistant import config_entries
-from homeassistant.components.assist_satellite import AssistSatelliteConfiguration
+from homeassistant.components.assist_satellite import \
+    AssistSatelliteConfiguration
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers import discovery_flow, entity_registry as er
+from homeassistant.helpers import discovery_flow
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.service_info.esphome import ESPHomeServiceInfo
 from homeassistant.helpers.storage import Store
 

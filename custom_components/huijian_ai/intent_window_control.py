@@ -3,27 +3,26 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN
-from homeassistant.components.button.const import SERVICE_PRESS as SERVICE_PRESS_BUTTON
+from homeassistant.components.button.const import \
+    SERVICE_PRESS as SERVICE_PRESS_BUTTON
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
 from .intent_helper import HaTargetItem, target_parameter_type
-from .intent_window_const import (
-    WINDOW_NAME_MAPPING,
-    WINDOW_ACTION_MAPPING,
-    extract_window_name,
-    find_action_in_text,
-    find_window_buttons,
-    find_all_window_buttons_by_action,
-)
+from .intent_window_const import (WINDOW_ACTION_MAPPING, WINDOW_NAME_MAPPING,
+                                  extract_window_name, find_action_in_text,
+                                  find_all_window_buttons_by_action,
+                                  find_window_buttons)
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def _press_multi_buttons(hass, context, action: str, button_entity_ids: list[str]) -> dict:
+async def _press_multi_buttons(
+    hass, context, action: str, button_entity_ids: list[str]
+) -> dict:
     """Press multiple window buttons and return results dict.
-    
+
     Used by all-window paths (generic name like "所有窗户" or bare type name like "窗户").
     """
     results = []
@@ -37,25 +36,22 @@ async def _press_multi_buttons(hass, context, action: str, button_entity_ids: li
                 blocking=True,
             )
             results.append(button_entity_id)
-            _LOGGER.info(f"Pressed all-window button: {button_entity_id}")
+            _LOGGER.info("Pressed all-window button: %s", button_entity_id)
         except Exception as err:
-            _LOGGER.error(f"Failed to press {button_entity_id}: {err}")
+            _LOGGER.error("Failed to press %s: %s", button_entity_id, err)
     return results
 
 
 class ControlWindowIntent(intent.IntentHandler):
     intent_type = "ControlWindow"
     description = (
-        "Control windows by pressing physical buttons. "
-        "TRIGGER when user says window-related commands containing action keywords. "
-        "Action keyword mapping: '开'/'开启'=open, '关'/'关闭'=close, "
-        "'暂停'/'停止'/'停'=pause, '内倒'/'内岛'=A (tilt mode). "
-        "Examples: '内岛展厅窗户' -> action='A', area='展厅', name='窗户'. "
-        "'打开平推窗' -> action='open', name='平推窗'. "
-        "'关闭卧室窗户' -> action='close', area='卧室', name='窗户'. "
-        "Valid window names: 平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户. "
-        "Delete buttons are automatically excluded."
+        "Unified entry for ALL window commands (open/close/pause/tilt). "
+        "Action keywords: 开/开启=open, 关/关闭=close, 暂停/停止/停=pause, 内倒/内岛=A(tilt). "
+        "Examples: '内岛展厅窗户' -> action=A, area=展厅, name=窗户. "
+        "'打开平推窗' -> action=open, name=平推窗. "
+        "Valid window names: 平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户."
     )
+
     @property
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
@@ -67,7 +63,7 @@ class ControlWindowIntent(intent.IntentHandler):
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
         """Handle window control intent."""
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"ControlWindow slots={slots}")
+        _LOGGER.info("ControlWindow slots=%s", slots)
 
         action_slot = slots.get("action", {}).get("value")
         targets: list[HaTargetItem] = slots.get("target", {}).get("value", [])
@@ -84,7 +80,10 @@ class ControlWindowIntent(intent.IntentHandler):
             domains = devices[0].get("domains", [])
             device_name = devices[0].get("name")
 
-        _LOGGER.info(f"Input: device_name='{device_name}', domains={domains}, area_name='{area_name}', action_slot='{action_slot}'")
+        _LOGGER.info(
+            "Input: device_name='%s', domains=%s, area_name='%s', action_slot='%s'",
+            device_name, domains, area_name, action_slot,
+        )
 
         window_name = extract_window_name(device_name or "")
         action = find_action_in_text(device_name or "")
@@ -92,11 +91,13 @@ class ControlWindowIntent(intent.IntentHandler):
         if not action and action_slot:
             action = find_action_in_text(action_slot)
 
-        _LOGGER.info(f"Extracted: window_name='{window_name}', action='{action}'")
+        _LOGGER.info("Extracted: window_name='%s', action='%s'", window_name, action)
 
         if not window_name:
             if area_name and action:
-                all_buttons = find_all_window_buttons_by_action(intent_obj.hass, area_name, action)
+                all_buttons = find_all_window_buttons_by_action(
+                    intent_obj.hass, area_name, action
+                )
                 if all_buttons:
                     results = await _press_multi_buttons(
                         intent_obj.hass, intent_obj.context, action, all_buttons
@@ -108,21 +109,24 @@ class ControlWindowIntent(intent.IntentHandler):
                     }
             return {
                 "success": False,
-                "error": f"Could not extract window name from '{device_name}'"
+                "error": f"Could not extract window name from '{device_name}'",
             }
 
         # Detect when LLM sends just the bare general window name (e.g., name="窗户" or "窗")
         # This means "all windows of this type in the area"
         # Specific type names like "平推窗" should NOT trigger all-windows mode
         is_all_windows = (
-            window_name and device_name and
-            device_name.strip().lower() == window_name.lower() and
-            window_name.lower() in ("窗户", "窗")
+            window_name
+            and device_name
+            and device_name.strip().lower() == window_name.lower()
+            and window_name.lower() in ("窗户", "窗")
         )
 
         if is_all_windows:
             if area_name and action:
-                all_buttons = find_all_window_buttons_by_action(intent_obj.hass, area_name, action)
+                all_buttons = find_all_window_buttons_by_action(
+                    intent_obj.hass, area_name, action
+                )
                 if all_buttons:
                     results = await _press_multi_buttons(
                         intent_obj.hass, intent_obj.context, action, all_buttons
@@ -134,27 +138,31 @@ class ControlWindowIntent(intent.IntentHandler):
                     }
             return {
                 "success": False,
-                "error": f"Could not find any {action} buttons in {area_name}"
+                "error": f"Could not find any {action} buttons in {area_name}",
             }
 
         if not action:
             return {
                 "success": False,
-                "error": f"Could not determine action from '{device_name}' or '{action_slot}'"
+                "error": f"Could not determine action from '{device_name}' or '{action_slot}'",
             }
 
-        buttons = find_window_buttons(intent_obj.hass, window_name, area_name, original_name=device_name)
+        buttons = find_window_buttons(
+            intent_obj.hass, window_name, area_name, original_name=device_name
+        )
 
-        _LOGGER.info(f"Found buttons (with area filter): {buttons}")
+        _LOGGER.info("Found buttons (with area filter): %s", buttons)
 
         if action not in buttons and area_name:
-            buttons = find_window_buttons(intent_obj.hass, window_name, None, original_name=device_name)
-            _LOGGER.info(f"Found buttons (without area filter): {buttons}")
+            buttons = find_window_buttons(
+                intent_obj.hass, window_name, None, original_name=device_name
+            )
+            _LOGGER.info("Found buttons (without area filter): %s", buttons)
 
         if action not in buttons:
             return {
                 "success": False,
-                "error": f"Could not find {action} button for {window_name} in {area_name or 'any area'}"
+                "error": f"Could not find {action} button for {window_name} in {area_name or 'any area'}",
             }
 
         button_entity_id = buttons[action]
@@ -167,14 +175,11 @@ class ControlWindowIntent(intent.IntentHandler):
                 context=intent_obj.context,
                 blocking=True,
             )
-            _LOGGER.info(f"Successfully pressed: {button_entity_id}")
+            _LOGGER.info("Successfully pressed: %s", button_entity_id)
             return {
                 "success": True,
                 "message": "已经帮你执行了",
             }
         except Exception as err:
-            _LOGGER.error(f"Failed to press {button_entity_id}: {err}")
-            return {
-                "success": False,
-                "error": str(err)
-            }
+            _LOGGER.error("Failed to press %s: %s", button_entity_id, err)
+            return {"success": False, "error": str(err)}

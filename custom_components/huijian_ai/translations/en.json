@@ -89,7 +89,8 @@
             }
         },
         "progress": {
-            "qrcode": "{tip}"
+            "qrcode": "{tip}",
+            "waiting_for_device": "Waiting for device confirmation..."
         }
     },
     "entity": {

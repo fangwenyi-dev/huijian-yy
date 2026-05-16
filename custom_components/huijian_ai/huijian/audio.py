@@ -1,11 +1,11 @@
-import logging
 import asyncio
+import logging
+from collections.abc import AsyncGenerator, AsyncIterable
+
 import numpy as np
 import opuslib_next as opuslib
-
-from homeassistant.core import HomeAssistant
 from homeassistant.components import ffmpeg
-from collections.abc import AsyncIterable, AsyncGenerator
+from homeassistant.core import HomeAssistant
 
 from ..const import DOMAIN
 
@@ -29,10 +29,13 @@ async def async_convert_audio(
     command = [
         ffmpeg_manager.binary,
         "-hide_banner",
-        "-loglevel", "error",
-        "-f", from_extension,
+        "-loglevel",
+        "error",
+        "-f",
+        from_extension,
         *(input_params or []),
-        "-i", "pipe:0",
+        "-i",
+        "pipe:0",
     ]
     if to_sample_rate is not None:
         command.extend(["-ar", str(to_sample_rate)])
@@ -68,7 +71,9 @@ async def async_convert_audio(
             if process.stdin:
                 process.stdin.close()
 
-    writer_task = hass.async_create_background_task(write_input(), f"{DOMAIN}_stt_ffmpeg")
+    writer_task = hass.async_create_background_task(
+        write_input(), f"{DOMAIN}_stt_ffmpeg"
+    )
     assert process.stdout
     try:
         if to_extension == "opus":
@@ -87,11 +92,39 @@ async def async_convert_audio(
         if retcode != 0:
             assert process.stderr
             stderr_data = await process.stderr.read()
-            _LOGGER.error("Convert audio failed (%s): %s", retcode, stderr_data.decode())
-            raise RuntimeError(f"Unexpected error while running ffmpeg with arguments: {command}. See log for details.")
+            _LOGGER.error(
+                "Convert audio failed (%s): %s", retcode, stderr_data.decode()
+            )
+            raise RuntimeError(
+                f"Unexpected error while running ffmpeg with arguments: {command}. See log for details."
+            )
 
 
-async def wav_to_opus(stream, sample_rate = 16000, channels = 1, frame_duration = 60):
+def _parse_wav_data_offset(data: bytes) -> int:
+    """Parse RIFF/WAV header to find the offset of the data chunk.
+
+    Standard WAV has a 44-byte header, but extension chunks (fact, list, etc.)
+    can make it larger. This function traverses RIFF chunks to find 'data'.
+    """
+    if len(data) < 12:
+        return 44
+    if data[0:4] != b"RIFF":
+        return 0
+    # Skip RIFF header (12 bytes: RIFF + size + WAVE)
+    offset = 12
+    while offset + 8 <= len(data):
+        chunk_id = data[offset:offset + 4]
+        chunk_size = int.from_bytes(data[offset + 4:offset + 8], "little")
+        if chunk_id == b"data":
+            return offset + 8
+        offset += 8 + chunk_size
+        # Chunks are padded to even byte boundary
+        if chunk_size % 2:
+            offset += 1
+    return 44
+
+
+async def wav_to_opus(stream, sample_rate=16000, channels=1, frame_duration=60):
     frame_samples = int(sample_rate * (frame_duration / 1000))
     frame_bytes = frame_samples * channels * 2
     encoder = opuslib.Encoder(sample_rate, channels, opuslib.APPLICATION_AUDIO)
@@ -99,9 +132,9 @@ async def wav_to_opus(stream, sample_rate = 16000, channels = 1, frame_duration 
     wav_header_skip = None
     async for chunk in stream:
         if wav_header_skip is None and chunk.startswith(b"RIFF"):
-            wav_header_skip = 44
-            _LOGGER.debug("Skipping WAV header: %s", chunk.hex())
-        else:
+            wav_header_skip = _parse_wav_data_offset(chunk)
+            _LOGGER.debug("WAV data offset: %s", wav_header_skip)
+        elif wav_header_skip is None:
             wav_header_skip = 0
         if wav_header_skip > 0:
             skip_len = min(len(chunk), wav_header_skip)
@@ -143,7 +176,7 @@ class AsyncOggOpusDemuxer:
             page_header = await self._read_exact(4)
             if not page_header:
                 break
-            if page_header != b'OggS':
+            if page_header != b"OggS":
                 raise ValueError("Invalid Ogg header received from ffmpeg")
 
             common_header = await self._read_exact(23)
@@ -165,7 +198,7 @@ class AsyncOggOpusDemuxer:
             packet_buffer = bytearray()
             data_ptr = 0
             for segment_len in segment_table:
-                packet_buffer.extend(page_data[data_ptr: data_ptr + segment_len])
+                packet_buffer.extend(page_data[data_ptr : data_ptr + segment_len])
                 data_ptr += segment_len
 
                 if segment_len < 255:

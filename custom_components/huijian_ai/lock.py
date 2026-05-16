@@ -5,18 +5,14 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from aioesphomeapi import EntityInfo, LockCommand, LockEntityState, LockInfo, LockState
-
+from aioesphomeapi import (EntityInfo, LockCommand, LockEntityState, LockInfo,
+                           LockState)
 from homeassistant.components.lock import LockEntity, LockEntityFeature
 from homeassistant.const import ATTR_CODE
 from homeassistant.core import callback
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_state_property, platform_async_setup_entry)
 
 PARALLEL_UPDATES = 0
 

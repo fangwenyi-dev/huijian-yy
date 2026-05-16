@@ -3,97 +3,55 @@
 from __future__ import annotations
 
 import base64
-from functools import partial
 import logging
 import secrets
 import struct
+from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from aioesphomeapi import (
-    APIClient,
-    APIConnectionError,
-    APIVersion,
-    DeviceInfo as EsphomeDeviceInfo,
-    EncryptionPlaintextAPIError,
-    ExecuteServiceResponse,
-    HomeassistantServiceCall,
-    InvalidAuthAPIError,
-    InvalidEncryptionKeyAPIError,
-    LogLevel,
-    ReconnectLogic,
-    RequiresEncryptionAPIError,
-    SupportsResponseType,
-    UserService,
-    UserServiceArgType,
-    ZWaveProxyRequest,
-    ZWaveProxyRequestType,
-    parse_log_message,
-)
-from awesomeversion import AwesomeVersion
 import voluptuous as vol
-
+from aioesphomeapi import APIClient, APIConnectionError, APIVersion
+from aioesphomeapi import DeviceInfo as EsphomeDeviceInfo
+from aioesphomeapi import (EncryptionPlaintextAPIError, ExecuteServiceResponse,
+                           HomeassistantServiceCall, InvalidAuthAPIError,
+                           InvalidEncryptionKeyAPIError, LogLevel,
+                           ReconnectLogic, RequiresEncryptionAPIError,
+                           SupportsResponseType, UserService,
+                           UserServiceArgType, ZWaveProxyRequest,
+                           ZWaveProxyRequestType, parse_log_message)
+from awesomeversion import AwesomeVersion
 from homeassistant.components import bluetooth, tag, zeroconf
-from homeassistant.const import (
-    ATTR_DEVICE_ID,
-    CONF_MODE,
-    EVENT_HOMEASSISTANT_CLOSE,
-    EVENT_LOGGING_CHANGED,
-    Platform,
-)
-from homeassistant.core import (
-    CALLBACK_TYPE,
-    Event,
-    EventStateChangedData,
-    HomeAssistant,
-    ServiceCall,
-    ServiceResponse,
-    State,
-    SupportsResponse,
-    callback,
-)
-from homeassistant.exceptions import (
-    HomeAssistantError,
-    ServiceNotFound,
-    ServiceValidationError,
-    TemplateError,
-)
-from homeassistant.helpers import (
-    config_validation as cv,
-    device_registry as dr,
-    entity_registry as er,
-    issue_registry as ir,
-    json as json_helper,
-    template,
-)
+from homeassistant.const import (ATTR_DEVICE_ID, CONF_MODE,
+                                 EVENT_HOMEASSISTANT_CLOSE,
+                                 EVENT_LOGGING_CHANGED, Platform)
+from homeassistant.core import (CALLBACK_TYPE, Event, EventStateChangedData,
+                                HomeAssistant, ServiceCall, ServiceResponse,
+                                State, SupportsResponse, callback)
+from homeassistant.exceptions import (HomeAssistantError, ServiceNotFound,
+                                      ServiceValidationError, TemplateError)
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import json as json_helper
+from homeassistant.helpers import template
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.issue_registry import (
-    IssueSeverity,
-    async_create_issue,
-    async_delete_issue,
-)
+from homeassistant.helpers.issue_registry import (IssueSeverity,
+                                                  async_create_issue,
+                                                  async_delete_issue)
 from homeassistant.helpers.service import async_set_service_schema
 from homeassistant.helpers.template import Template
 from homeassistant.util.json import json_loads_object
 
 from .bluetooth import async_connect_scanner
-from .const import (
-    CONF_ALLOW_SERVICE_CALLS,
-    CONF_BLUETOOTH_MAC_ADDRESS,
-    CONF_DEVICE_NAME,
-    CONF_NOISE_PSK,
-    CONF_SUBSCRIBE_LOGS,
-    DEFAULT_ALLOW_SERVICE_CALLS,
-    DEFAULT_URL,
-    DOMAIN,
-    PROJECT_URLS,
-    STABLE_BLE_VERSION,
-    STABLE_BLE_VERSION_STR,
-)
+from .const import (CONF_ALLOW_SERVICE_CALLS, CONF_BLUETOOTH_MAC_ADDRESS,
+                    CONF_DEVICE_NAME, CONF_NOISE_PSK, CONF_SUBSCRIBE_LOGS,
+                    DEFAULT_ALLOW_SERVICE_CALLS, DEFAULT_URL, DOMAIN,
+                    PROJECT_URLS, STABLE_BLE_VERSION, STABLE_BLE_VERSION_STR)
 from .dashboard import async_get_dashboard
 from .domain_data import DomainData
 from .encryption_key_storage import async_get_encryption_key_storage
-
 # Import config flow so that it's added to the registry
 from .entry_data import ESPHomeConfigEntry, RuntimeEntryData
 from .enum_mapper import EsphomeEnumMapper
@@ -103,7 +61,8 @@ UNPACK_UINT32_BE = struct.Struct(">I").unpack_from
 
 
 if TYPE_CHECKING:
-    from aioesphomeapi.api_pb2 import SubscribeLogsResponse  # type: ignore[attr-defined]  # noqa: I001
+    from aioesphomeapi.api_pb2 import \
+        SubscribeLogsResponse  # type: ignore[attr-defined]  # noqa: I001
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -1195,12 +1154,12 @@ async def execute_service(
     )
 
     try:
-        response: (
-            ExecuteServiceResponse | None
-        ) = await entry_data.client.execute_service(
-            service,
-            call.data,
-            return_response=need_response_data,
+        response: ExecuteServiceResponse | None = (
+            await entry_data.client.execute_service(
+                service,
+                call.data,
+                return_response=need_response_data,
+            )
         )
     except APIConnectionError as err:
         raise HomeAssistantError(

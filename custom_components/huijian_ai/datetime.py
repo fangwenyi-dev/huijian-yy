@@ -6,11 +6,11 @@ from datetime import datetime
 from functools import partial
 
 from aioesphomeapi import DateTimeInfo, DateTimeState
-
 from homeassistant.components.datetime import DateTimeEntity
 from homeassistant.util import dt as dt_util
 
-from .entity import EsphomeEntity, esphome_state_property, platform_async_setup_entry
+from .entity import (EsphomeEntity, esphome_state_property,
+                     platform_async_setup_entry)
 
 PARALLEL_UPDATES = 0
 

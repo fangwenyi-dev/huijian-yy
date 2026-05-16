@@ -4,29 +4,20 @@ from __future__ import annotations
 
 from functools import partial
 
-from aioesphomeapi import (
-    AlarmControlPanelCommand,
-    AlarmControlPanelEntityState as ESPHomeAlarmControlPanelEntityState,
-    AlarmControlPanelInfo,
-    AlarmControlPanelState as ESPHomeAlarmControlPanelState,
-    APIIntEnum,
-    EntityInfo,
-)
-
+from aioesphomeapi import AlarmControlPanelCommand
+from aioesphomeapi import \
+    AlarmControlPanelEntityState as ESPHomeAlarmControlPanelEntityState
+from aioesphomeapi import AlarmControlPanelInfo
+from aioesphomeapi import \
+    AlarmControlPanelState as ESPHomeAlarmControlPanelState
+from aioesphomeapi import APIIntEnum, EntityInfo
 from homeassistant.components.alarm_control_panel import (
-    AlarmControlPanelEntity,
-    AlarmControlPanelEntityFeature,
-    AlarmControlPanelState,
-    CodeFormat,
-)
+    AlarmControlPanelEntity, AlarmControlPanelEntityFeature,
+    AlarmControlPanelState, CodeFormat)
 from homeassistant.core import callback
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_state_property, platform_async_setup_entry)
 from .enum_mapper import EsphomeEnumMapper
 
 PARALLEL_UPDATES = 0

@@ -2,32 +2,21 @@
 
 from __future__ import annotations
 
-from functools import partial
 import math
+from functools import partial
 from typing import Any
 
 from aioesphomeapi import EntityInfo, FanDirection, FanInfo, FanSpeed, FanState
-
-from homeassistant.components.fan import (
-    DIRECTION_FORWARD,
-    DIRECTION_REVERSE,
-    FanEntity,
-    FanEntityFeature,
-)
+from homeassistant.components.fan import (DIRECTION_FORWARD, DIRECTION_REVERSE,
+                                          FanEntity, FanEntityFeature)
 from homeassistant.core import callback
-from homeassistant.util.percentage import (
-    ordered_list_item_to_percentage,
-    percentage_to_ordered_list_item,
-    percentage_to_ranged_value,
-    ranged_value_to_percentage,
-)
+from homeassistant.util.percentage import (ordered_list_item_to_percentage,
+                                           percentage_to_ordered_list_item,
+                                           percentage_to_ranged_value,
+                                           ranged_value_to_percentage)
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_state_property, platform_async_setup_entry)
 from .enum_mapper import EsphomeEnumMapper
 
 PARALLEL_UPDATES = 0

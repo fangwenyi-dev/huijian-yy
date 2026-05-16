@@ -5,11 +5,8 @@ from __future__ import annotations
 from functools import partial
 
 from aioesphomeapi import BinarySensorInfo, BinarySensorState, EntityInfo
-
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-)
+from homeassistant.components.binary_sensor import (BinarySensorDeviceClass,
+                                                    BinarySensorEntity)
 from homeassistant.core import callback
 from homeassistant.util.enum import try_parse_enum
 

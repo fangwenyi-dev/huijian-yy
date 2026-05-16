@@ -2,26 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
 import math
+from datetime import date, datetime
 
-from aioesphomeapi import (
-    EntityInfo,
-    SensorInfo,
-    SensorState,
-    SensorStateClass as EsphomeSensorStateClass,
-    TextSensorInfo,
-    TextSensorState,
-)
+from aioesphomeapi import EntityInfo, SensorInfo, SensorState
+from aioesphomeapi import SensorStateClass as EsphomeSensorStateClass
+from aioesphomeapi import TextSensorInfo, TextSensorState
 from aioesphomeapi.model import LastResetType
-
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import (SensorDeviceClass, SensorEntity,
+                                             SensorStateClass)
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.entity_platform import \
+    AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 from homeassistant.util.enum import try_parse_enum
 

@@ -1,9 +1,12 @@
 import io
 import json
 import logging
-from ..const import DOMAIN
-from homeassistant.helpers import entity_registry as er, instance_id
+
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import instance_id
+
+from ..const import DOMAIN
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +26,7 @@ class Dict(dict):
 async def get_haid(hass):
     return await instance_id.async_get(hass)
 
+
 def get_entry_data(hass, entry, field=None, set_default=None, pop=False):
     config_type = entry.data.get("config_type")
     if config_type == "assist":
@@ -30,7 +34,7 @@ def get_entry_data(hass, entry, field=None, set_default=None, pop=False):
     else:
         domain_data = hass.data.setdefault(DOMAIN, {})
         data = domain_data.setdefault(entry.entry_id, {})
-        
+
     if field and pop:
         return data.pop(field, None)
     if field and set_default is not None:
@@ -49,17 +53,17 @@ def get_config_entry(hass, speak_id=None, mac=None):
             return entry
     return None
 
+
 def get_entities(hass, speak_id=None, mac=None):
     entry = get_config_entry(hass, speak_id, mac)
     if not entry:
         return []
     return er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
 
+
 def get_entities_ids(hass, speak_id=None, mac=None):
-    return [
-        entity.entity_id
-        for entity in get_entities(hass, speak_id, mac)
-    ]
+    return [entity.entity_id for entity in get_entities(hass, speak_id, mac)]
+
 
 def EntryAuthFailedError(hass, entry):
     entry.async_start_reauth(hass)
@@ -73,6 +77,7 @@ def EntryAuthFailedError(hass, entry):
 def generate_qr_code(data: str):
     """Generate a base64 PNG string represent QR Code image of data."""
     import pyqrcode  # noqa: PLC0415
+
     qr_code = pyqrcode.create(data)
     with io.BytesIO() as buffer:
         qr_code.svg(file=buffer, scale=4, module_color="#FFFFFF", background="#000000")

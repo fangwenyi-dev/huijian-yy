@@ -19,10 +19,12 @@ from .huijian import get_entities
 
 _LOGGER = logging.getLogger(__name__)
 
+
 def async_should_expose(hass: HomeAssistant, assistant: str, entity_id: str) -> bool:
     """Return True if an entity should be exposed to an assistant."""
     exposed_entities = hass.data[DATA_EXPOSED_ENTITIES]
     return exposed_entities.async_should_expose(assistant, entity_id)
+
 
 def _get_exposed_entities(
     hass: HomeAssistant,
@@ -36,7 +38,7 @@ def _get_exposed_entities(
     area_registry = ar.async_get(hass)
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
-        
+
     interesting_attributes = {
         "temperature",
         "current_temperature",
@@ -51,7 +53,6 @@ def _get_exposed_entities(
         "media_title",
         "media_artist",
         "media_album_name",
-        
         "color_temp_kelvin",
         "min_color_temp_kelvin",
         "max_color_temp_kelvin",
@@ -61,7 +62,6 @@ def _get_exposed_entities(
         "target_temp_step",
         "min_humidity",
         "max_humidity",
-        
     }
 
     entities = {}
@@ -133,26 +133,28 @@ def _get_exposed_entities(
     data["entities"] = entities
     return data
 
+
 def find_speaker_area(hass: HomeAssistant, speaker_id: str) -> ar.AreaEntry | None:
     speaker_entities = get_entities(hass, speaker_id)
     if not speaker_entities or len(speaker_entities) == 0:
         return
-    
+
     speaker_device_id = speaker_entities[0].device_id
     if not speaker_device_id:
         return
-    
+
     device_registry = dr.async_get(hass)
     speaker_device = device_registry.async_get(speaker_device_id)
     if not speaker_device:
         return
-    
+
     if not speaker_device.area_id:
         return
-    
+
     area_registry = ar.async_get(hass)
     return area_registry.async_get_area(speaker_device.area_id)
-    
+
+
 class HuijianGetLiveContextIntent(intent.IntentHandler):
     intent_type = "huijianGetLiveContext"
     description = (
@@ -166,21 +168,21 @@ class HuijianGetLiveContextIntent(intent.IntentHandler):
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
         return None
-    
-    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore
+
+    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:  # type: ignore
         """Get the current state of exposed entities."""
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"huijianGetLiveContext: slots={slots}")
-        
+        _LOGGER.info("huijianGetLiveContext: slots=%s", slots)
+
         speaker_id: str = slots.get("_speaker_id", {}).get("value")
-        
+
         hass = intent_obj.hass
 
         if intent_obj.assistant is None:
             # Note this doesn't happen in practice since this tool won't be
             # exposed if no assistant is configured.
             return {"success": False, "error": "No assistant configured"}
-        
+
         speaker_info: dict | None = None
         if speaker_id:
             # Query the speaker's area by its ID.
@@ -191,12 +193,15 @@ class HuijianGetLiveContextIntent(intent.IntentHandler):
                     "floor_id": speaker_area.floor_id,
                     "area_name": speaker_area.name,
                 }
-                _LOGGER.info(f"huijianGetLiveContext: speaker_info={speaker_info}")
+                _LOGGER.info("huijianGetLiveContext: speaker_info=%s", speaker_info)
 
         exposed_entities = _get_exposed_entities(hass, intent_obj.assistant)
         if not exposed_entities["entities"]:
-            return {"success": False, "error": "No devices available for operation. Please expose them in the Home Assistant voice assistant."}
-        
+            return {
+                "success": False,
+                "error": "No devices available for operation. Please expose them in the Home Assistant voice assistant.",
+            }
+
         prompt = [
             "Live Context: An overview of the areas and the devices in this smart home:",
             yaml_util.dump(list(exposed_entities["entities"].values())),

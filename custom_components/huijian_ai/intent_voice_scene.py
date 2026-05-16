@@ -5,13 +5,14 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import intent
 from homeassistant.helpers.storage import Store
 from homeassistant.util.json import JsonObjectType
-from .intent_device_shared import split_actions_by_device, WINDOW_KEYWORDS
+
+from .intent_device_shared import WINDOW_KEYWORDS, split_actions_by_device
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +39,11 @@ class VoiceSceneStore:
         """Load data from storage."""
         if self._data is None:
             store = await self._get_store()
-            self._data = await store.async_load() or {"version": 1, "scenes": {}, "trigger_index": {}}
+            self._data = await store.async_load() or {
+                "version": 1,
+                "scenes": {},
+                "trigger_index": {},
+            }
         return self._data
 
     async def _save_data(self, data: dict[str, Any]) -> None:
@@ -65,7 +70,9 @@ class VoiceSceneStore:
         data = await self._load_data()
         return list(data.get("scenes", {}).values())
 
-    async def create_scene(self, trigger_phrase: str, actions: list[dict[str, Any]]) -> tuple[bool, str]:
+    async def create_scene(
+        self, trigger_phrase: str, actions: list[dict[str, Any]]
+    ) -> tuple[bool, str]:
         """Create a new scene.
 
         Returns:
@@ -89,10 +96,12 @@ class VoiceSceneStore:
             data.setdefault("trigger_index", {})[trigger_phrase] = scene_id
 
             await self._save_data(data)
-            _LOGGER.info(f"Created voice scene: {scene_id}, trigger: {trigger_phrase}")
+            _LOGGER.info("Created voice scene: %s, trigger: %s", scene_id, trigger_phrase)
             return True, scene_id
 
-    async def delete_scene(self, trigger_phrase: str | None = None, scene_id: str | None = None) -> tuple[bool, str]:
+    async def delete_scene(
+        self, trigger_phrase: str | None = None, scene_id: str | None = None
+    ) -> tuple[bool, str]:
         """Delete a scene by trigger phrase or scene ID.
 
         Returns:
@@ -118,12 +127,17 @@ class VoiceSceneStore:
 
                 del data["scenes"][scene_id]
                 await self._save_data(data)
-                _LOGGER.info(f"Deleted voice scene: {scene_id}")
+                _LOGGER.info("Deleted voice scene: %s", scene_id)
                 return True, f"已删除语音场景：{trigger or scene_id}"
             else:
                 return False, "请提供trigger_phrase或scene_id"
 
-    async def update_scene(self, scene_id: str, trigger_phrase: str | None = None, actions: list[dict[str, Any]] | None = None) -> tuple[bool, str]:
+    async def update_scene(
+        self,
+        scene_id: str,
+        trigger_phrase: str | None = None,
+        actions: list[dict[str, Any]] | None = None,
+    ) -> tuple[bool, str]:
         """Update a scene's trigger phrase and/or actions.
 
         Returns:
@@ -150,7 +164,7 @@ class VoiceSceneStore:
                 scene["actions"] = actions
 
             await self._save_data(data)
-            _LOGGER.info(f"Updated voice scene: {scene_id}")
+            _LOGGER.info("Updated voice scene: %s", scene_id)
             return True, f"已更新语音场景：{scene.get('trigger_phrase', scene_id)}"
 
 
@@ -272,13 +286,17 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
                     continue
 
                 window_action = "open" if intent_name == "TurnDeviceOn" else "close"
-                new_actions.append({
-                    "name": "ControlWindow",
-                    "parameters": {
-                        "target": [{"area": area, "devices": [{"domains": ["button"]}]}],
-                        "action": window_action
+                new_actions.append(
+                    {
+                        "name": "ControlWindow",
+                        "parameters": {
+                            "target": [
+                                {"area": area, "devices": [{"domains": ["button"]}]}
+                            ],
+                            "action": window_action,
+                        },
                     }
-                })
+                )
                 existing_window_areas.add(area)
                 _LOGGER.info(
                     f"自动补充: 区域'{area}'缺少窗户控制, 添加ControlWindow action"
@@ -288,7 +306,7 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"HassCreateVoiceScene slots={slots}")
+        _LOGGER.info("HassCreateVoiceScene slots=%s", slots)
 
         trigger_phrase = slots.get("trigger_phrase", {}).get("value", "")
         actions = slots.get("actions", {}).get("value", [])
@@ -300,11 +318,13 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
             return {"success": False, "error": "动作列表不能为空"}
 
         split_actions = split_actions_by_device(actions)
-        _LOGGER.info(f"HassCreateVoiceScene split_actions={split_actions}")
+        _LOGGER.info("HassCreateVoiceScene split_actions=%s", split_actions)
 
-        supplemented = await self._auto_supplement_windows(intent_obj.hass, split_actions)
+        supplemented = await self._auto_supplement_windows(
+            intent_obj.hass, split_actions
+        )
         if len(supplemented) != len(split_actions):
-            _LOGGER.info(f"自动补充后: {len(supplemented)}个action")
+            _LOGGER.info("自动补充后: %s个action", len(supplemented))
         split_actions = supplemented
 
         store = get_voice_scene_store(intent_obj.hass)
@@ -314,13 +334,10 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
             return {
                 "success": True,
                 "scene_id": result,
-                "message": f"已创建语音场景：{trigger_phrase}"
+                "message": f"已创建语音场景：{trigger_phrase}",
             }
         else:
-            return {
-                "success": False,
-                "error": result
-            }
+            return {"success": False, "error": result}
 
 
 class HassTriggerVoiceSceneIntent(intent.IntentHandler):
@@ -341,7 +358,7 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
         """Handle voice scene trigger - execute stored actions."""
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"HassTriggerVoiceScene slots={slots}")
+        _LOGGER.info("HassTriggerVoiceScene slots=%s", slots)
 
         trigger_phrase = slots.get("trigger_phrase", {}).get("value", "")
 
@@ -354,67 +371,74 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
         if not scene:
             return {
                 "success": False,
-                "error": f"未找到触发词'{trigger_phrase}'对应的场景"
+                "error": f"未找到触发词'{trigger_phrase}'对应的场景",
             }
 
         executed_actions = []
         for action in scene.get("actions", []):
             intent_name = action.get("intent") or action.get("name")
             params = action.get("params") or action.get("parameters", {})
-            _LOGGER.info(f"Executing scene action: intent={intent_name}, params={params}")
+            _LOGGER.info(
+                f"Executing scene action: intent={intent_name}, params={params}"
+            )
 
             try:
-                result = await self._execute_action_with_timeout(intent_obj, intent_name, params)
-                executed_actions.append({
-                    "intent": intent_name,
-                    "result": "success",
-                    "detail": result
-                })
+                result = await self._execute_action_with_timeout(
+                    intent_obj, intent_name, params
+                )
+                executed_actions.append(
+                    {"intent": intent_name, "result": "success", "detail": result}
+                )
             except asyncio.TimeoutError:
-                _LOGGER.error(f"Action timeout: intent={intent_name}")
-                executed_actions.append({
-                    "intent": intent_name,
-                    "result": "error",
-                    "error": "执行超时"
-                })
+                _LOGGER.error("Action timeout: intent=%s", intent_name)
+                executed_actions.append(
+                    {"intent": intent_name, "result": "error", "error": "执行超时"}
+                )
             except Exception as e:
-                _LOGGER.error(f"Failed to execute action: {e}")
-                executed_actions.append({
-                    "intent": intent_name,
-                    "result": "error",
-                    "error": str(e)
-                })
+                _LOGGER.error("Failed to execute action: %s", e)
+                executed_actions.append(
+                    {"intent": intent_name, "result": "error", "error": str(e)}
+                )
 
         return {
             "success": True,
             "scene_id": scene.get("scene_id"),
             "executed_actions": executed_actions,
-            "message": f"已执行场景：{trigger_phrase}"
+            "message": f"已执行场景：{trigger_phrase}",
         }
 
-    async def _execute_action_with_timeout(self, intent_obj: intent.Intent, intent_name: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _execute_action_with_timeout(
+        self, intent_obj: intent.Intent, intent_name: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
         """Execute an intent action with timeout."""
         try:
             result = await asyncio.wait_for(
                 self._execute_intent(intent_obj, intent_name, params),
-                timeout=self.service_timeout
+                timeout=self.service_timeout,
             )
             return result
         except asyncio.TimeoutError:
             raise
 
-    async def _execute_intent(self, intent_obj: intent.Intent, intent_name: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _execute_intent(
+        self, intent_obj: intent.Intent, intent_name: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
         """Execute an intent action by delegating to the registered IntentHandler.
 
         Calls the original IntentHandler via intent.async_handle, eliminating
         code duplication with intent_turn.py, intent_window_control.py, etc.
         """
         from homeassistant.helpers import intent as ha_intent
+
         from .const import DOMAIN
 
         if intent_name not in [
-            "TurnDeviceOn", "TurnDeviceOff", "ControlWindow", "WindowControl",
-            "AdjustDeviceAttribute", "SetDeviceMode",
+            "TurnDeviceOn",
+            "TurnDeviceOff",
+            "ControlWindow",
+            "WindowControl",
+            "AdjustDeviceAttribute",
+            "SetDeviceMode",
         ]:
             return {"success": False, "error": f"不支持的intent类型: {intent_name}"}
 
@@ -434,7 +458,7 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
             )
             return response
         except Exception as e:
-            _LOGGER.error(f"Intent execution failed: {intent_name}: {e}")
+            _LOGGER.error("Intent execution failed: %s: %s", intent_name, e)
             return {"success": False, "error": str(e)}
 
 
@@ -455,7 +479,7 @@ class HassDeleteVoiceSceneIntent(intent.IntentHandler):
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"HassDeleteVoiceScene slots={slots}")
+        _LOGGER.info("HassDeleteVoiceScene slots=%s", slots)
 
         trigger_phrase = slots.get("trigger_phrase", {}).get("value")
         scene_id = slots.get("scene_id", {}).get("value")
@@ -465,14 +489,13 @@ class HassDeleteVoiceSceneIntent(intent.IntentHandler):
 
         store = get_voice_scene_store(intent_obj.hass)
         success, message = await store.delete_scene(
-            trigger_phrase=trigger_phrase,
-            scene_id=scene_id
+            trigger_phrase=trigger_phrase, scene_id=scene_id
         )
 
         return {
             "success": success,
             "message": message if success else None,
-            "error": message if not success else None
+            "error": message if not success else None,
         }
 
 
@@ -494,7 +517,4 @@ class HassListVoiceScenesIntent(intent.IntentHandler):
         store = get_voice_scene_store(intent_obj.hass)
         scenes = await store.get_all_scenes()
 
-        return {
-            "success": True,
-            "scenes": scenes
-        }
+        return {"success": True, "scenes": scenes}

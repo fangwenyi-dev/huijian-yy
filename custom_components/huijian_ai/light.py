@@ -6,39 +6,22 @@ from functools import lru_cache, partial
 from operator import methodcaller
 from typing import TYPE_CHECKING, Any, cast
 
-from aioesphomeapi import (
-    APIVersion,
-    ColorMode as ESPHomeColorMode,
-    EntityInfo,
-    LightColorCapability,
-    LightInfo,
-    LightState,
-)
-
-from homeassistant.components.light import (
-    ATTR_BRIGHTNESS,
-    ATTR_COLOR_TEMP_KELVIN,
-    ATTR_EFFECT,
-    ATTR_FLASH,
-    ATTR_RGB_COLOR,
-    ATTR_RGBW_COLOR,
-    ATTR_RGBWW_COLOR,
-    ATTR_TRANSITION,
-    ATTR_WHITE,
-    FLASH_LONG,
-    FLASH_SHORT,
-    ColorMode,
-    LightEntity,
-    LightEntityFeature,
-)
+from aioesphomeapi import APIVersion
+from aioesphomeapi import ColorMode as ESPHomeColorMode
+from aioesphomeapi import (EntityInfo, LightColorCapability, LightInfo,
+                           LightState)
+from homeassistant.components.light import (ATTR_BRIGHTNESS,
+                                            ATTR_COLOR_TEMP_KELVIN,
+                                            ATTR_EFFECT, ATTR_FLASH,
+                                            ATTR_RGB_COLOR, ATTR_RGBW_COLOR,
+                                            ATTR_RGBWW_COLOR, ATTR_TRANSITION,
+                                            ATTR_WHITE, FLASH_LONG,
+                                            FLASH_SHORT, ColorMode,
+                                            LightEntity, LightEntityFeature)
 from homeassistant.core import callback
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_state_property, platform_async_setup_entry)
 
 PARALLEL_UPDATES = 0
 

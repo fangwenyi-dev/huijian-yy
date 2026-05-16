@@ -2,75 +2,54 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
-from collections.abc import Mapping
+import asyncio
 import json
 import logging
+from collections import OrderedDict
+from collections.abc import Mapping
 from typing import Any, cast
 from urllib.parse import urlencode
 
-from aioesphomeapi import (
-    APIClient,
-    APIConnectionError,
-    DeviceInfo,
-    InvalidAuthAPIError,
-    InvalidEncryptionKeyAPIError,
-    RequiresEncryptionAPIError,
-    ResolveAPIError,
-    wifi_mac_to_bluetooth_mac,
-)
 import aiohttp
-import asyncio
 import voluptuous as vol
-
+from aioesphomeapi import (APIClient, APIConnectionError, DeviceInfo,
+                           InvalidAuthAPIError, InvalidEncryptionKeyAPIError,
+                           RequiresEncryptionAPIError, ResolveAPIError,
+                           wifi_mac_to_bluetooth_mac)
 from homeassistant.components import zeroconf
-from homeassistant.config_entries import (
-    SOURCE_ESPHOME,
-    SOURCE_IGNORE,
-    SOURCE_REAUTH,
-    SOURCE_RECONFIGURE,
-    ConfigEntry,
-    ConfigEntryBaseFlow,
-    ConfigFlow,
-    ConfigFlowResult,
-    FlowType,
-    OptionsFlowWithReload,
-)
+from homeassistant.config_entries import (SOURCE_ESPHOME, SOURCE_IGNORE,
+                                          SOURCE_REAUTH, SOURCE_RECONFIGURE,
+                                          ConfigEntry, ConfigEntryBaseFlow,
+                                          ConfigFlow, ConfigFlowResult,
+                                          FlowType, OptionsFlowWithReload)
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow, FlowResultType
-from homeassistant.helpers import selector, discovery_flow
-from homeassistant.helpers.network import get_url
+from homeassistant.helpers import discovery_flow, selector
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.importlib import async_import_module
+from homeassistant.helpers.network import get_url
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from homeassistant.helpers.service_info.esphome import ESPHomeServiceInfo
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.helpers.service_info.mqtt import MqttServiceInfo
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
-from homeassistant.util.json import json_loads_object
 from homeassistant.util import ulid
+from homeassistant.util.json import json_loads_object
 
-from .const import (
-    CONF_ALLOW_SERVICE_CALLS,
-    CONF_DEBOUNCE_MINUTES,
-    CONF_DEVICE_NAME,
-    CONF_NOISE_PSK,
-    CONF_STT_ENTITY_ID,
-    CONF_SUBSCRIBE_LOGS,
-    CONF_TTS_ENTITY_ID,
-    DEFAULT_ALLOW_SERVICE_CALLS,
-    DEFAULT_DEBOUNCE_MINUTES,
-    DEFAULT_NEW_CONFIG_ALLOW_ALLOW_SERVICE_CALLS,
-    DEFAULT_PORT,
-    DOMAIN,
-)
-from .dashboard import async_get_or_create_dashboard_manager, async_set_dashboard_info
+from .const import (CONF_ALLOW_SERVICE_CALLS, CONF_DEBOUNCE_MINUTES,
+                    CONF_DEVICE_NAME, CONF_NOISE_PSK, CONF_STT_ENTITY_ID,
+                    CONF_SUBSCRIBE_LOGS, CONF_TTS_ENTITY_ID,
+                    DEFAULT_ALLOW_SERVICE_CALLS, DEFAULT_DEBOUNCE_MINUTES,
+                    DEFAULT_NEW_CONFIG_ALLOW_ALLOW_SERVICE_CALLS, DEFAULT_PORT,
+                    DOMAIN)
+from .dashboard import (async_get_or_create_dashboard_manager,
+                        async_set_dashboard_info)
 from .encryption_key_storage import async_get_encryption_key_storage
 from .entry_data import ESPHomeConfigEntry
-from .manager import async_replace_device
-from .huijian import Dict, get_haid, generate_qr_code
+from .huijian import Dict, generate_qr_code, get_haid
 from .huijian.http import async_setup_https
+from .manager import async_replace_device
 
 ERROR_REQUIRES_ENCRYPTION_KEY = "requires_encryption_key"
 ERROR_INVALID_ENCRYPTION_KEY = "invalid_psk"
@@ -135,6 +114,16 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
         self._entry_with_name_conflict: ConfigEntry | None = None
         self.init()
 
+    def _cancel_wait_task(self):
+        if self._wait_task and not self._wait_task.done():
+            self._wait_task.cancel()
+            self._wait_task = None
+
+    async def async_abort(self) -> None:
+        self._cancel_wait_task()
+        self.clean_setup()
+        return await super().async_abort()
+
     async def _async_step_user_base(
         self, user_input: dict[str, Any] | None = None, error: str | None = None
     ) -> ConfigFlowResult:
@@ -178,18 +167,24 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
         }
         reconfig_entry = self._get_reconfig_entry()
         if reconfig_entry and reconfig_entry.data.get("mac"):
-            params.update({
-                "mac": reconfig_entry.data.get("mac"),
-                "speak_id": reconfig_entry.data.get("speak_id"),
-            })
+            params.update(
+                {
+                    "mac": reconfig_entry.data.get("mac"),
+                    "speak_id": reconfig_entry.data.get("speak_id"),
+                }
+            )
         internal = get_url(self.hass, prefer_external=False)
         external = get_url(self.hass, prefer_external=True) or internal
         haip = internal.split("//")[1].split(":")[0]
-        image = generate_qr_code(f"{external}/api/huijian-ai/setup/qrcode?{urlencode(params)}")
-        self._extra.tip = "\n".join([
-            f"您的 HomeAssistant 局域网IP地址是 **{haip}**",
-            f"\n{image}",
-        ])
+        image = generate_qr_code(
+            f"{external}/api/huijian-ai/setup/qrcode?{urlencode(params)}"
+        )
+        self._extra.tip = "\n".join(
+            [
+                f"您的 HomeAssistant 局域网IP地址是 **{haip}**",
+                f"\n{image}",
+            ]
+        )
         return self.async_show_progress(
             step_id="qrcode",
             progress_action="qrcode",
@@ -207,7 +202,9 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
             user_input = {}
 
         _LOGGER.info("setup_data: %s", self.setup_data)
-        config_type = self.setup_data.get("config_type", "device") if self.setup_data else None
+        config_type = (
+            self.setup_data.get("config_type", "device") if self.setup_data else None
+        )
         mcp_endpoint = self.setup_data.get("mcp_endpoint") if self.setup_data else None
         _LOGGER.info("mcp_endpoint: %s", mcp_endpoint)
 
@@ -219,20 +216,28 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
                 self._port = int(port)
             except (TypeError, ValueError):
                 self._port = 6053
-                _LOGGER.exception(f"Invalid port value '{port}', using default 6053")
+                _LOGGER.exception("Invalid port value '%s', using default 6053", port)
             self._noise_psk = self.setup_data.get(CONF_NOISE_PSK)
             error = await self.fetch_device_info()
             if error:
                 errors["base"] = error
-            elif not user_input.get("submit_confirm"):
-                self._extra.tip = "\n".join([
-                    "设备信息如下:",
-                    f"**名称**: {self._name}",
-                    f"**IP**: {self._host}"
-                    f"**MAC**: {self._device_mac}",
-                ])
                 schema = {
-                    vol.Required("submit_confirm", default=True): selector.BooleanSelector(),
+                    vol.Required(
+                        "submit_confirm", default=True
+                    ): selector.BooleanSelector(),
+                }
+            elif not user_input.get("submit_confirm"):
+                self._extra.tip = "\n".join(
+                    [
+                        "设备信息如下:",
+                        f"**名称**: {self._name}",
+                        f"**IP**: {self._host}" f"**MAC**: {self._device_mac}",
+                    ]
+                )
+                schema = {
+                    vol.Required(
+                        "submit_confirm", default=True
+                    ): selector.BooleanSelector(),
                 }
             else:
                 self._extra.config_data = {
@@ -257,12 +262,16 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
                 "tts_endpoint": self.setup_data.get("tts_endpoint"),
             }
             reconfig_entry = self._get_reconfig_entry()
-            if entry := self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, haid):
+            if entry := self.hass.config_entries.async_entry_for_domain_unique_id(
+                DOMAIN, haid
+            ):
                 reconfig_entry = entry
                 _LOGGER.info("Found existing entry for %s", entry.title)
             if reconfig_entry:
                 _LOGGER.debug("Update existing entry: %s", config_data)
-                return self.async_update_reload_and_abort(reconfig_entry, data=config_data)
+                return self.async_update_reload_and_abort(
+                    reconfig_entry, data=config_data
+                )
 
             await self.async_set_unique_id(haid)
             self._abort_if_unique_id_configured()
@@ -280,13 +289,21 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
                     "tip": self._extra.pop("tip", ""),
                 },
             )
-        return self.async_step_qrcode_done(user_input)
+        return self.async_show_form(
+            step_id="qrcode_done",
+            errors={"base": "unknown_config_type"},
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "tip": "配置类型未知，请重新尝试",
+            },
+        )
 
     async def _wait_for_setup_data(self):
-        while True:
+        for _ in range(1000):
             if self.setup_data:
-                break
+                return
             await asyncio.sleep(0.3)
+        _LOGGER.error("Timeout waiting for setup data for %s", self.setup_uuid)
 
     def _get_reconfig_entry(self):
         if getattr(self, "_reauth_entry", None):
@@ -1066,13 +1083,21 @@ class OptionsFlowHandler(OptionsFlowWithReload):
     """Handle a option flow for esphome."""
 
     DOMAIN_NAMES = {
-        "light": "灯", "switch": "开关", "climate": "空调",
-        "cover": "窗帘", "fan": "风扇", "media_player": "媒体",
-        "button": "窗户", "lock": "锁", "valve": "阀门",
+        "light": "灯",
+        "switch": "开关",
+        "climate": "空调",
+        "cover": "窗帘",
+        "fan": "风扇",
+        "media_player": "媒体",
+        "button": "窗户",
+        "lock": "锁",
+        "valve": "阀门",
     }
     INTENT_NAMES = {
-        "TurnDeviceOn": "打开", "TurnDeviceOff": "关闭",
-        "ControlWindow": "窗户", "AdjustDeviceAttribute": "调节",
+        "TurnDeviceOn": "打开",
+        "TurnDeviceOff": "关闭",
+        "ControlWindow": "窗户",
+        "AdjustDeviceAttribute": "调节",
         "SetDeviceMode": "设模式",
     }
 
@@ -1084,7 +1109,12 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         if intent in ("ControlWindow", "WindowControl"):
             action_type = params.get("action", "")
-            action_label = {"open": "开窗", "close": "关窗", "pause": "暂停窗户", "a": "窗户A"}.get(action_type, f"窗户({action_type})")
+            action_label = {
+                "open": "开窗",
+                "close": "关窗",
+                "pause": "暂停窗户",
+                "a": "窗户A",
+            }.get(action_type, f"窗户({action_type})")
             targets = params.get("target", [])
             areas = []
             for t in targets if isinstance(targets, list) else [targets]:
@@ -1129,8 +1159,8 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage voice scenes and automations inline - support batch delete."""
-        from .intent_voice_scene import get_voice_scene_store
         from .intent_automation import get_automation_store
+        from .intent_voice_scene import get_voice_scene_store
 
         voice_store = get_voice_scene_store(self.hass)
         auto_store = get_automation_store(self.hass)
@@ -1153,7 +1183,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 if deleted:
                     return self.async_show_form(
                         step_id="voice_scene_delete_result",
-                        description_placeholders={"result_msg": f"已删除 {len(deleted)} 个场景"},
+                        description_placeholders={
+                            "result_msg": f"已删除 {len(deleted)} 个场景"
+                        },
                         last_step=False,
                     )
 
@@ -1172,7 +1204,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 if deleted_auto:
                     return self.async_show_form(
                         step_id="voice_scene_delete_result",
-                        description_placeholders={"result_msg": f"已删除 {len(deleted_auto)} 个自动化"},
+                        description_placeholders={
+                            "result_msg": f"已删除 {len(deleted_auto)} 个自动化"
+                        },
                         last_step=False,
                     )
 
@@ -1209,7 +1243,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             for a in actions:
                 intent_name = a.get("name") or a.get("intent", "Unknown")
                 action_summaries.append(intent_name)
-            auto_lines.append(f"{i}. {entity_id} ({condition}) -> {', '.join(action_summaries)}")
+            auto_lines.append(
+                f"{i}. {entity_id} ({condition}) -> {', '.join(action_summaries)}"
+            )
         auto_desc = "\n".join(auto_lines) if auto_lines else "暂无传感器自动化"
 
         scene_options = {}
@@ -1226,25 +1262,35 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         data_schema = vol.Schema({})
         if scene_options:
-            data_schema = data_schema.extend({
-                vol.Optional("to_delete", default=[]): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[{"value": k, "label": v} for k, v in scene_options.items()],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                        multiple=True,
+            data_schema = data_schema.extend(
+                {
+                    vol.Optional("to_delete", default=[]): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": k, "label": v}
+                                for k, v in scene_options.items()
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            multiple=True,
+                        ),
                     ),
-                ),
-            })
+                }
+            )
         if auto_options:
-            data_schema = data_schema.extend({
-                vol.Optional("to_delete_auto", default=[]): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[{"value": k, "label": v} for k, v in auto_options.items()],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                        multiple=True,
+            data_schema = data_schema.extend(
+                {
+                    vol.Optional("to_delete_auto", default=[]): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": k, "label": v}
+                                for k, v in auto_options.items()
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            multiple=True,
+                        ),
                     ),
-                ),
-            })
+                }
+            )
 
         internal_url = get_url(self.hass, prefer_external=False)
         manage_url_text = f"管理界面：{internal_url}/api/huijian-ai/manage-page"
@@ -1252,7 +1298,11 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         return self.async_show_form(
             step_id="init",
             data_schema=data_schema,
-            description_placeholders={"scene_list": scene_desc, "auto_list": auto_desc, "manage_url": manage_url_text},
+            description_placeholders={
+                "scene_list": scene_desc,
+                "auto_list": auto_desc,
+                "manage_url": manage_url_text,
+            },
             last_step=False,
         )
 

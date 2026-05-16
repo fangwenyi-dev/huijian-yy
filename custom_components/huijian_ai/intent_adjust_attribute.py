@@ -5,7 +5,8 @@ from enum import Enum
 from typing import Any, Callable, Literal, get_args
 
 import voluptuous as vol
-from homeassistant.components import climate, cover, fan, humidifier, light, number
+from homeassistant.components import (climate, cover, fan, humidifier, light,
+                                      number)
 from homeassistant.const import (ATTR_ENTITY_ID, ATTR_TEMPERATURE,
                                  SERVICE_SET_COVER_POSITION, SERVICE_TURN_ON,
                                  Platform)
@@ -16,11 +17,14 @@ from homeassistant.helpers import intent
 from homeassistant.util.color import RGBColor
 from homeassistant.util.json import JsonObjectType, JsonValueType
 
-from .intent_helper import EntityInfo, HaTargetItem, match_intent_entities, target_parameter_type
+from .intent_helper import (EntityInfo, HaTargetItem, match_intent_entities,
+                            target_parameter_type)
 
 _LOGGER = logging.getLogger(__name__)
 
-UnsupportAdjustmentError = intent.IntentHandleError("Adjustment is not supported. Try setting it directly to the specified value.")
+UnsupportAdjustmentError = intent.IntentHandleError(
+    "Adjustment is not supported. Try setting it directly to the specified value."
+)
 
 
 @dataclass
@@ -29,6 +33,7 @@ class IntentEntityState:
     success: bool = True
     error: str | None = None
     attrs: dict[str, str | int | float] = field(default_factory=dict)
+
 
 class ExtIntentResponse(intent.IntentResponse):
     def __init__(self, language: str, intent: intent.Intent | None = None) -> None:
@@ -39,11 +44,13 @@ class ExtIntentResponse(intent.IntentResponse):
     def create_default_state(self, name: str):
         return IntentEntityState(name=name, attrs={})
 
-    def set_state(self, entity_info: EntityInfo, attrs: dict | None ={}, error: str | None = None):
+    def set_state(
+        self, entity_info: EntityInfo, attrs: dict | None = {}, error: str | None = None
+    ):
         entity_id = entity_info.entity.id
         name = entity_info.name
         state = self.entity_states.setdefault(
-            entity_id, 
+            entity_id,
             self.create_default_state(name),
         )
         if attrs:
@@ -51,10 +58,10 @@ class ExtIntentResponse(intent.IntentResponse):
         if error:
             state.success = False
             state.error = f"Failed: {error}"
-        
+
         if entity_id not in self.entity_order:
             self.entity_order.append(entity_id)
-            
+
     def states(self) -> tuple[list[JsonValueType], int]:
         states = []
         success_count = 0
@@ -64,7 +71,7 @@ class ExtIntentResponse(intent.IntentResponse):
             if state.success:
                 success_count += 1
         return states, success_count
-        
+
     @callback
     def as_dict(self) -> dict[str, Any]:
         """Return a dictionary representation of an intent response."""
@@ -78,40 +85,50 @@ class AdjustType(Enum):
     SET = 0
     DECREASE = -1
 
+
 DeltaSpecialValue = Literal["min", "max", "low", "medium", "high", "auto"]
 DELTA_SPECIAL_VALUES: set[DeltaSpecialValue] = set(get_args(DeltaSpecialValue))
 
 DeltaSupport = Literal["level", "number"]
 
+
 @dataclass
-class Delta():
+class Delta:
     adjust: AdjustType
     value: int | float = 0
     abs_value: int | float = 0
-    str_value: str = '' # 色值 FFEE00
-    unit: str = ''
+    str_value: str = ""  # 色值 FFEE00
+    unit: str = ""
     special: DeltaSpecialValue | None = None
-    
+
     def readable_value(self) -> str:
         if self.special:
             return self.special
         if self.str_value:
             return self.str_value
-        
+
         mark = ""
         if self.adjust == AdjustType.INCREASE:
             mark = "+"
         elif self.adjust == AdjustType.DECREASE:
             mark = "-"
-        
+
         v = f"{mark}{self.value}"
         if self.unit:
             v = f"{v}{self.unit}"
         return v
-    
-    def calc_target(self, current_value: float | None, level_step: float, min_change: float, min_value: float, max_value: float, supports: set[DeltaSupport]) -> int:
+
+    def calc_target(
+        self,
+        current_value: float | None,
+        level_step: float,
+        min_change: float,
+        min_value: float,
+        max_value: float,
+        supports: set[DeltaSupport],
+    ) -> int:
         """Calculate target value (level, percentage or number).
-        
+
         Args:
             current_value: The current value.
             change_step: The supported change step.
@@ -121,57 +138,60 @@ class Delta():
         """
         level_step = int(level_step)
         if self.special:
-            if self.special == 'min':
+            if self.special == "min":
                 target_value = min_value
-            elif self.special == 'max':
+            elif self.special == "max":
                 target_value = max_value
-            elif self.special == 'low':
+            elif self.special == "low":
                 target_value = min_value
-            elif self.special == 'medium':
+            elif self.special == "medium":
                 raise intent.IntentHandleError("unsupported")
-            elif self.special == 'high':
+            elif self.special == "high":
                 target_value = max_value
             else:
                 raise intent.IntentHandleError("unsupported")
             return int(max(min_value, min(max_value, target_value)))
-        
-        if self.unit in ['level', '档']:
+
+        if self.unit in ["level", "档"]:
             # Delta is level.
             if "level" not in supports:
                 raise intent.IntentHandleError(f"level adjustment is not supported")
-            
+
             if self.adjust == AdjustType.SET:
-                target_value = self.value*level_step
+                target_value = self.value * level_step
             else:
                 if current_value is None:
                     raise UnsupportAdjustmentError
-                
+
                 # Adjust the current value to the stepped value.
-                left_stepped_value = current_value//level_step*level_step
+                left_stepped_value = current_value // level_step * level_step
                 right_stepped_value = left_stepped_value + level_step
-                if current_value - left_stepped_value <= right_stepped_value - current_value:
+                if (
+                    current_value - left_stepped_value
+                    <= right_stepped_value - current_value
+                ):
                     stepped_current_value = left_stepped_value
                 else:
                     stepped_current_value = right_stepped_value
-                target_value = stepped_current_value + self.value*level_step
+                target_value = stepped_current_value + self.value * level_step
             return int(max(level_step, min(max_value, target_value)))
-        
+
         # Delta is number, includes percentage.
         if "number" not in supports:
             raise intent.IntentHandleError(f"number adjustment is not supported")
-        
+
         if self.adjust == AdjustType.SET:
             user_target_value = self.value
         else:
             if current_value is None:
                 raise UnsupportAdjustmentError
             user_target_value = current_value + self.value
-            
+
         if user_target_value == max_value:
             target_value = max_value
         else:
             # Match to the right stepped value.
-            left_stepped_value = user_target_value//min_change*min_change
+            left_stepped_value = user_target_value // min_change * min_change
             right_stepped_value = left_stepped_value + min_change
             target_value = None
             # e.g., 10.5 in [10, 11]
@@ -179,12 +199,17 @@ class Delta():
                 if abs(user_target_value - valid_value) < 1:
                     target_value = valid_value
                     # Align to the smaller value when descrease or set.
-                    if self.adjust == AdjustType.DECREASE or self.adjust == AdjustType.SET:
+                    if (
+                        self.adjust == AdjustType.DECREASE
+                        or self.adjust == AdjustType.SET
+                    ):
                         break
             if target_value is None:
-                raise intent.IntentHandleError(f"violates the change step: {min_change}")
+                raise intent.IntentHandleError(
+                    f"violates the change step: {min_change}"
+                )
         return int(max(min_value, min(max_value, target_value)))
-        
+
 
 def parse_delta(raw: str):
     """Parse raw value str to readable object."""
@@ -196,37 +221,37 @@ def parse_delta(raw: str):
     elif raw.startswith("#"):
         # color hex value
         raw = raw.upper()
-        hex_color_pattern = r'^#([0-9A-F]{3,6})$'
+        hex_color_pattern = r"^#([0-9A-F]{3,6})$"
         m = re.search(hex_color_pattern, raw)
         if not m:
             return
-        
+
         color_value = m.groups()[0]
         return Delta(
             adjust=AdjustType.SET,
             str_value=color_value,
-            unit='#',
+            unit="#",
         )
     else:
-        m = re.search(r'^([+-]?)\s?(\d+\.\d+|\d+)\s?(.*)$', raw)
+        m = re.search(r"^([+-]?)\s?(\d+\.\d+|\d+)\s?(.*)$", raw)
         if not m:
             return
         mark, value_raw, unit = m.groups()
-        
-        if value_raw.find('.') != -1:
+
+        if value_raw.find(".") != -1:
             abs_value = float(value_raw)
         else:
             abs_value = int(value_raw)
         value = abs_value
-        
-        if mark == '+':
+
+        if mark == "+":
             adjust = AdjustType.INCREASE
-        elif mark == '-':
+        elif mark == "-":
             adjust = AdjustType.DECREASE
             value = value * -1
         else:
             adjust = AdjustType.SET
-            
+
         return Delta(
             adjust=adjust,
             value=value,
@@ -234,21 +259,27 @@ def parse_delta(raw: str):
             unit=unit.lower(),
         )
 
+
 @dataclass
 class AdjustmentContext:
     state: State
     delta: Delta
+
 
 @dataclass
 class AdjustmentTarget:
     service: str = ""
     service_data: dict = field(default_factory=dict)
     attributes: dict | None = None
-    
-adjustment_functions: dict[str, dict[str, Callable[[AdjustmentContext, AdjustmentTarget], None]]] = {}
+
+
+adjustment_functions: dict[
+    str, dict[str, Callable[[AdjustmentContext, AdjustmentTarget], None]]
+] = {}
 
 supported_domain_list = set()
 supported_attribute_list = set()
+
 
 def register_adjustment(domain: str, attrbute: str):
     def decorator(func):
@@ -256,10 +287,12 @@ def register_adjustment(domain: str, attrbute: str):
         supported_attribute_list.add(attrbute)
         attrbute_handlers = adjustment_functions.setdefault(domain, {})
         attrbute_handlers[attrbute] = func
-        
+
         def wrapper(ctx: AdjustmentContext, target: AdjustmentTarget):
             func(ctx, target)
+
         return wrapper
+
     return decorator
 
 
@@ -267,20 +300,22 @@ def register_adjustment(domain: str, attrbute: str):
 def adjust_light_brightness(ctx: AdjustmentContext, target: AdjustmentTarget):
     percentage_step = 10
     target.attributes = {
-        "max_level": int(100//percentage_step),
+        "max_level": int(100 // percentage_step),
         "supported_adjust_step": f"{percentage_step}%",
     }
-    
+
     current_percent = None
     if ctx.delta.adjust != AdjustType.SET:
         current_brightness = ctx.state.attributes.get(light.ATTR_BRIGHTNESS)
         if current_brightness is None:
             raise UnsupportAdjustmentError
-        current_percent = round(current_brightness/254*100)
-    
-    target_percent = ctx.delta.calc_target(current_percent, percentage_step, 1, 1, 100, supports={"number", "level"})
+        current_percent = round(current_brightness / 254 * 100)
+
+    target_percent = ctx.delta.calc_target(
+        current_percent, percentage_step, 1, 1, 100, supports={"number", "level"}
+    )
     target.service_data[light.ATTR_BRIGHTNESS_PCT] = target_percent
-    
+
     target.attributes["updated_brightness"] = f"{target_percent}%"
     target.service = SERVICE_TURN_ON
 
@@ -288,17 +323,17 @@ def adjust_light_brightness(ctx: AdjustmentContext, target: AdjustmentTarget):
 @register_adjustment("light", "color")
 def adjust_light_color(ctx: AdjustmentContext, target: AdjustmentTarget):
     target.attributes = {}
-    
+
     hex_color = ctx.delta.str_value
     if len(hex_color) == 3:
-        hex_color = ''.join([c * 2 for c in hex_color])
-    
+        hex_color = "".join([c * 2 for c in hex_color])
+
     # 十六进制转十进制
-    r = int(hex_color[0:2], 16)  
+    r = int(hex_color[0:2], 16)
     g = int(hex_color[2:4], 16)
     b = int(hex_color[4:6], 16)
     target_color = RGBColor(r, g, b)
-        
+
     target.service = SERVICE_TURN_ON
     target.service_data[light.ATTR_RGB_COLOR] = target_color
     target.attributes["updated_value"] = f"#{hex_color}"
@@ -306,31 +341,46 @@ def adjust_light_color(ctx: AdjustmentContext, target: AdjustmentTarget):
 
 @register_adjustment("light", "temperature")
 def adjust_light_temperature(ctx: AdjustmentContext, target: AdjustmentTarget):
-    
-    color_temperature_min = ctx.state.attributes.get(light.ATTR_MIN_COLOR_TEMP_KELVIN, 2000)
-    color_temperature_max = ctx.state.attributes.get(light.ATTR_MAX_COLOR_TEMP_KELVIN, 6500)
+
+    color_temperature_min = ctx.state.attributes.get(
+        light.ATTR_MIN_COLOR_TEMP_KELVIN, 2000
+    )
+    color_temperature_max = ctx.state.attributes.get(
+        light.ATTR_MAX_COLOR_TEMP_KELVIN, 6500
+    )
     color_temperature_step = 500
-    
+
     if ctx.delta.unit == "%":
         # Convert percentage to Kelvin
-        ctx.delta.value = int(ctx.delta.value/100 * (color_temperature_max - color_temperature_min))
+        ctx.delta.value = int(
+            ctx.delta.value / 100 * (color_temperature_max - color_temperature_min)
+        )
         if ctx.delta.adjust == AdjustType.SET:
             ctx.delta.value += color_temperature_min
         ctx.delta.unit = "K"
-    
+
     target.attributes = {
-        "min_value": f"{color_temperature_min}K", 
+        "min_value": f"{color_temperature_min}K",
         "max_value": f"{color_temperature_max}K",
         "supported_adjust_step": f"{color_temperature_step}K",
     }
-    
+
     current_color_temperature = None
     if ctx.delta.adjust != AdjustType.SET:
-        current_color_temperature: float | None = ctx.state.attributes.get(light.ATTR_COLOR_TEMP_KELVIN)
+        current_color_temperature: float | None = ctx.state.attributes.get(
+            light.ATTR_COLOR_TEMP_KELVIN
+        )
         if current_color_temperature is None:
             raise UnsupportAdjustmentError
-        
-    target_temperature = ctx.delta.calc_target(current_color_temperature, color_temperature_step, 1, color_temperature_min, color_temperature_max, supports={"number", "level"})
+
+    target_temperature = ctx.delta.calc_target(
+        current_color_temperature,
+        color_temperature_step,
+        1,
+        color_temperature_min,
+        color_temperature_max,
+        supports={"number", "level"},
+    )
     target.service = SERVICE_TURN_ON
     target.service_data[light.ATTR_COLOR_TEMP_KELVIN] = target_temperature
     target.attributes["updated_value"] = f"{target_temperature}K"
@@ -340,7 +390,7 @@ def adjust_light_temperature(ctx: AdjustmentContext, target: AdjustmentTarget):
 def adjust_fan_speed(ctx: AdjustmentContext, target: AdjustmentTarget):
     percentage_step = ctx.state.attributes.get(fan.ATTR_PERCENTAGE_STEP, 25)
     target.attributes = {
-        "max_level": 100//int(percentage_step),
+        "max_level": 100 // int(percentage_step),
         "supported_adjust_step": f"{int(percentage_step)}%",
     }
     current_percent = None
@@ -352,13 +402,20 @@ def adjust_fan_speed(ctx: AdjustmentContext, target: AdjustmentTarget):
         if current_percent is None:
             raise UnsupportAdjustmentError
 
-    target_percent = ctx.delta.calc_target(current_percent, percentage_step, percentage_step, percentage_step, 100, supports={"number", "level"})
+    target_percent = ctx.delta.calc_target(
+        current_percent,
+        percentage_step,
+        percentage_step,
+        percentage_step,
+        100,
+        supports={"number", "level"},
+    )
     # Fix 33%*3 case.
     if target_percent >= 99:
         target_percent = 100
     target.service = SERVICE_TURN_ON
     target.service_data[fan.ATTR_PERCENTAGE] = target_percent
-    target.attributes["updated_level"] = int(target_percent//int(percentage_step))
+    target.attributes["updated_level"] = int(target_percent // int(percentage_step))
 
 
 @register_adjustment("climate", "fan_speed")
@@ -366,11 +423,11 @@ def adjust_climate_fan_speed(ctx: AdjustmentContext, target: AdjustmentTarget):
     fan_modes: list[str] = ctx.state.attributes.get(climate.const.ATTR_FAN_MODES, [])
     if len(fan_modes) == 0:
         raise intent.IntentHandleError("unsupported")
-    
+
     target.attributes = {
         "fan_modes": fan_modes,
     }
-    
+
     if ctx.delta.special and ctx.delta.special in ["auto", "low", "medium", "high"]:
         target_fan_mode = ctx.delta.special
         if target_fan_mode in fan_modes:
@@ -379,17 +436,17 @@ def adjust_climate_fan_speed(ctx: AdjustmentContext, target: AdjustmentTarget):
             target.attributes["fan_mode"] = target_fan_mode
             return
         raise intent.IntentHandleError("unsupported the mode")
-    
+
     # 档位排除掉自动
     if fan_modes[0] == "auto":
         fan_modes = fan_modes[1:]
-    
-    percentage_step = 100//len(fan_modes)
+
+    percentage_step = 100 // len(fan_modes)
     target.attributes = {
         "max_level": len(fan_modes),
         "supported_adjust_step": f"{int(percentage_step)}%",
     }
-    
+
     # Percentage or Level
     current_percent = None
     if ctx.delta.unit != "%":
@@ -398,19 +455,28 @@ def adjust_climate_fan_speed(ctx: AdjustmentContext, target: AdjustmentTarget):
         current_mode = ctx.state.attributes.get(climate.const.ATTR_FAN_MODE)
         if current_mode is None or current_mode == "auto":
             raise UnsupportAdjustmentError
-        
+
         mode_index = fan_modes.index(current_mode)
         # 33% 66% 99%
-        current_percent = (mode_index+1)*100//len(fan_modes)
+        current_percent = (mode_index + 1) * 100 // len(fan_modes)
 
-    target_percent = ctx.delta.calc_target(current_percent, percentage_step, percentage_step, percentage_step, 100, supports={"number", "level"})
+    target_percent = ctx.delta.calc_target(
+        current_percent,
+        percentage_step,
+        percentage_step,
+        percentage_step,
+        100,
+        supports={"number", "level"},
+    )
     # Set fan mode.
     if target_percent >= 99:
         target_percent = 100
-    
+
     # 50*25/100
-    _LOGGER.info(f"adjust_climate_fan_speed: current_percent={current_percent} target_percent={target_percent}")
-    target_mode_index = min(target_percent//percentage_step-1, len(fan_modes) - 1)
+    _LOGGER.info(
+        "adjust_climate_fan_speed: current_percent=%s target_percent=%s", current_percent, target_percent
+    )
+    target_mode_index = min(target_percent // percentage_step - 1, len(fan_modes) - 1)
     target_fan_mode = fan_modes[target_mode_index]
     target.service = climate.const.SERVICE_SET_FAN_MODE
     target.service_data[climate.const.ATTR_FAN_MODE] = target_fan_mode
@@ -422,28 +488,35 @@ def adjust_climate_fan_speed(ctx: AdjustmentContext, target: AdjustmentTarget):
 def adjust_climate_temperature(ctx: AdjustmentContext, target: AdjustmentTarget):
     if ctx.delta.unit == "%":
         raise intent.IntentHandleError("unsupported percentage")
-    
+
     if ctx.delta.unit in ["档", "level"]:
         ctx.delta.unit = "度"
-        
+
     min_temperature = ctx.state.attributes.get(climate.const.ATTR_MIN_TEMP, 10)
     max_temperature = ctx.state.attributes.get(climate.const.ATTR_MAX_TEMP, 30)
     temperature_step = ctx.state.attributes.get(climate.const.ATTR_TARGET_TEMP_STEP, 1)
-    temperature_step = max(temperature_step, 1) # >=1
+    temperature_step = max(temperature_step, 1)  # >=1
     target.attributes = {
         "supported_adjust_step": temperature_step,
         "min_value": min_temperature,
         "max_value": max_temperature,
         "hvac_mode": ctx.state.state,
     }
-    
+
     current_temperature: float | None = None
     if ctx.delta.adjust != AdjustType.SET:
         current_temperature: float | None = ctx.state.attributes.get("temperature")
         if current_temperature is None:
             raise UnsupportAdjustmentError
-        
-    target_temperature = ctx.delta.calc_target(current_temperature, temperature_step, 1, min_temperature, max_temperature, supports={"number"})
+
+    target_temperature = ctx.delta.calc_target(
+        current_temperature,
+        temperature_step,
+        1,
+        min_temperature,
+        max_temperature,
+        supports={"number"},
+    )
     target.service = climate.const.SERVICE_SET_TEMPERATURE
     target.service_data[ATTR_TEMPERATURE] = target_temperature
     target.attributes["updated_value"] = target_temperature
@@ -459,18 +532,27 @@ def adjust_humidifier_humidity(ctx: AdjustmentContext, target: AdjustmentTarget)
         "min_value": f"{min_value}%",
         "max_value": f"{max_value}%",
     }
-    
+
     current_value: float | None = None
     if ctx.delta.adjust != AdjustType.SET:
-        current_value: float | None = ctx.state.attributes.get(humidifier.const.ATTR_HUMIDITY)
+        current_value: float | None = ctx.state.attributes.get(
+            humidifier.const.ATTR_HUMIDITY
+        )
         if current_value is None or (current_value < min_value):
             raise UnsupportAdjustmentError
-        
-    target_value = ctx.delta.calc_target(current_value, adjustment_step, 1, min_value, max_value, supports={"number", "level"})
+
+    target_value = ctx.delta.calc_target(
+        current_value,
+        adjustment_step,
+        1,
+        min_value,
+        max_value,
+        supports={"number", "level"},
+    )
     target.service = humidifier.const.SERVICE_SET_HUMIDITY
     target.service_data[humidifier.const.ATTR_HUMIDITY] = target_value
     target.attributes["updated_value"] = f"{target_value}%"
-    
+
 
 @register_adjustment("cover", "position")
 def adjust_cover_position(ctx: AdjustmentContext, target: AdjustmentTarget):
@@ -483,11 +565,14 @@ def adjust_cover_position(ctx: AdjustmentContext, target: AdjustmentTarget):
         current_percent = ctx.state.attributes.get(cover.ATTR_CURRENT_POSITION)
         if current_percent is None:
             raise UnsupportAdjustmentError
-    
-    target_percent = ctx.delta.calc_target(current_percent, percentage_step, 1, 0, 100, supports={"number"})
+
+    target_percent = ctx.delta.calc_target(
+        current_percent, percentage_step, 1, 0, 100, supports={"number"}
+    )
     target.service = SERVICE_SET_COVER_POSITION
     target.service_data[cover.ATTR_POSITION] = target_percent
     target.attributes["updated_value"] = f"{target_percent}%"
+
 
 @register_adjustment("number", "value")
 def adjust_number_value(ctx: AdjustmentContext, target: AdjustmentTarget):
@@ -495,7 +580,8 @@ def adjust_number_value(ctx: AdjustmentContext, target: AdjustmentTarget):
     target.service = number.const.SERVICE_SET_VALUE
     target.service_data["value"] = ctx.delta.value
     target.attributes["updated_value"] = ctx.delta.value
-    
+
+
 @register_adjustment("media_player", "volume")
 def adjust_media_player_volume(ctx: AdjustmentContext, target: AdjustmentTarget):
     raise intent.IntentHandleError("unsupport")
@@ -505,12 +591,26 @@ def adjust_media_player_volume(ctx: AdjustmentContext, target: AdjustmentTarget)
 def adjust_media_player_brightness(ctx: AdjustmentContext, target: AdjustmentTarget):
     raise intent.IntentHandleError("unsupport")
 
-    
+
 class AdjustDeviceAttributeIntent(intent.IntentHandler):
     intent_type = "AdjustDeviceAttribute"
-    description = "Set or adjust the numerical value of device attribute."
-    platforms = {Platform.LIGHT, Platform.FAN, Platform.COVER, Platform.CLIMATE, Platform.MEDIA_PLAYER}
-    
+    description = (
+        "Set or adjust a device attribute value. "
+        "Supported attributes: brightness(light), color(light), temperature(light/climate), "
+        "position(cover), fan_speed(fan/climate), humidity(humidifier), volume(media_player). "
+        "Delta format: '+10'/'上调10'=increase, '-5'/'下调5'=decrease, "
+        "'50%'/'50度'=set absolute, 'max'/'min'/'low'/'high'=special values. "
+        "Examples: '把卧室灯调亮20%' -> attribute=brightness, delta=+20, target=卧室灯. "
+        "'把空调温度调到26度' -> attribute=temperature, delta=26, target=空调."
+    )
+    platforms = {
+        Platform.LIGHT,
+        Platform.FAN,
+        Platform.COVER,
+        Platform.CLIMATE,
+        Platform.MEDIA_PLAYER,
+    }
+
     @property
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
@@ -520,46 +620,44 @@ class AdjustDeviceAttributeIntent(intent.IntentHandler):
             vol.Required("target"): target_parameter_type(),
         }
 
-    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType: # type: ignore
+    async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:  # type: ignore
         """Handle the intent."""
         hass = intent_obj.hass
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"AdjustDeviceAttribute slots: {slots}")
-        
+        _LOGGER.info("AdjustDeviceAttribute slots: %s", slots)
+
         attribute: str = slots.get("attribute", {}).get("value")
         delta_raw: str = slots.get("delta", {}).get("value")
         targets: list[HaTargetItem] = slots.get("target", {}).get("value", [])
-        
+
         delta = parse_delta(delta_raw)
         if not delta:
-            raise intent.IntentHandleError(
-                f"invalid value: {delta_raw}"
-            )
-        
+            raise intent.IntentHandleError(f"invalid value: {delta_raw}")
+
         error_msg, candidate_entities = await match_intent_entities(intent_obj, targets)
         if error_msg:
             return error_msg
         assert candidate_entities
-        
+
         response = ExtIntentResponse(intent_obj.language, intent=intent_obj)
         for item in candidate_entities:
             domain = item.state.domain
             state = item.state
-            _LOGGER.info(f"AdjustDeviceAttribute state: {item.state.as_dict_json}")
-            
+            _LOGGER.info("AdjustDeviceAttribute state: %s", item.state.as_dict_json)
+
             error: str | None = None
             target = AdjustmentTarget()
             try:
                 prepare_adjustment = adjustment_functions.get(domain, {}).get(attribute)
                 if not prepare_adjustment:
                     raise intent.IntentHandleError("unspported")
-                
+
                 # Find the paramters to adjust.
                 prepare_adjustment(AdjustmentContext(state=state, delta=delta), target)
                 target.service_data[ATTR_ENTITY_ID] = state.entity_id
-                
+
                 # Perform adjustment.
-                _LOGGER.info(f"AdjustDeviceAttribute call target: {asdict(target)}")
+                _LOGGER.info("AdjustDeviceAttribute call target: %s", asdict(target))
                 await hass.services.async_call(
                     domain,
                     target.service,
@@ -569,7 +667,7 @@ class AdjustDeviceAttributeIntent(intent.IntentHandler):
                 )
             except (intent.IntentHandleError, ServiceValidationError) as e:
                 error = str(e)
-            
+
             response.set_state(item, target.attributes, error)
 
         states, success_count = response.states()

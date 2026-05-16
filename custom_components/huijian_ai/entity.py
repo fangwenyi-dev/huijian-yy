@@ -2,43 +2,32 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Coroutine
 import functools
 import logging
 import math
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Concatenate, Generic, TypeVar, cast
 
-from aioesphomeapi import (
-    APIConnectionError,
-    DeviceInfo as EsphomeDeviceInfo,
-    EntityCategory as EsphomeEntityCategory,
-    EntityInfo,
-    EntityState,
-)
 import voluptuous as vol
-
+from aioesphomeapi import APIConnectionError
+from aioesphomeapi import DeviceInfo as EsphomeDeviceInfo
+from aioesphomeapi import EntityCategory as EsphomeEntityCategory
+from aioesphomeapi import EntityInfo, EntityState
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import (
-    config_validation as cv,
-    device_registry as dr,
-    entity_platform,
-    entity_registry as er,
-)
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_platform
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-
 # Import config flow so that it's added to the registry
-from .entry_data import (
-    DeviceEntityKey,
-    ESPHomeConfigEntry,
-    RuntimeEntryData,
-    build_device_unique_id,
-)
+from .entry_data import (DeviceEntityKey, ESPHomeConfigEntry, RuntimeEntryData,
+                         build_device_unique_id)
 from .enum_mapper import EsphomeEnumMapper
 
 _LOGGER = logging.getLogger(__name__)

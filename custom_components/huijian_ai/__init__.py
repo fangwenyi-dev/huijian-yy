@@ -5,34 +5,28 @@ from __future__ import annotations
 import logging
 
 from aioesphomeapi import APIClient, APIConnectionError
-
 from homeassistant.components import zeroconf
 from homeassistant.components.bluetooth import async_remove_scanner
-from homeassistant.const import (
-    Platform,
-    CONF_HOST,
-    CONF_PASSWORD,
-    CONF_PORT,
-    __version__ as ha_version,
-)
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, Platform
+from homeassistant.const import __version__ as ha_version
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.issue_registry import async_delete_issue
 from homeassistant.helpers.typing import ConfigType
 
 from . import assist_satellite, dashboard, ffmpeg_proxy
+from .api import async_setup_api
 from .const import CONF_BLUETOOTH_MAC_ADDRESS, CONF_NOISE_PSK, DOMAIN
 from .domain_data import DomainData
 from .encryption_key_storage import async_get_encryption_key_storage
 from .entry_data import ESPHomeConfigEntry, RuntimeEntryData
-from .manager import DEVICE_CONFLICT_ISSUE_FORMAT, ESPHomeManager, cleanup_instance
-from .websocket_api import async_setup as async_setup_websocket_api
-
 from .huijian import LOGGER, Dict, get_entry_data, mcp_transport
 from .huijian.http import async_setup_https
-from .api import async_setup_api
 from .intent import async_setup_intents
 from .intent_automation import get_automation_manager
+from .manager import (DEVICE_CONFLICT_ISSUE_FORMAT, ESPHomeManager,
+                      cleanup_instance)
+from .websocket_api import async_setup as async_setup_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 

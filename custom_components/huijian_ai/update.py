@@ -5,37 +5,25 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from aioesphomeapi import (
-    DeviceInfo as ESPHomeDeviceInfo,
-    EntityInfo,
-    UpdateCommand,
-    UpdateInfo,
-    UpdateState,
-)
-
-from homeassistant.components.update import (
-    UpdateDeviceClass,
-    UpdateEntity,
-    UpdateEntityFeature,
-)
+from aioesphomeapi import DeviceInfo as ESPHomeDeviceInfo
+from aioesphomeapi import EntityInfo, UpdateCommand, UpdateInfo, UpdateState
+from homeassistant.components.update import (UpdateDeviceClass, UpdateEntity,
+                                             UpdateEntityFeature)
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.entity_platform import \
+    AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.enum import try_parse_enum
 
 from .const import DOMAIN
 from .coordinator import ESPHomeDashboardCoordinator
 from .dashboard import async_get_dashboard
-from .entity import (
-    EsphomeEntity,
-    async_esphome_state_property,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, async_esphome_state_property,
+                     convert_api_error_ha_error, esphome_state_property,
+                     platform_async_setup_entry)
 from .entry_data import ESPHomeConfigEntry, RuntimeEntryData
 
 PARALLEL_UPDATES = 0

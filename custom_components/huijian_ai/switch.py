@@ -6,17 +6,12 @@ from functools import partial
 from typing import Any
 
 from aioesphomeapi import EntityInfo, SwitchInfo, SwitchState
-
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.core import callback
 from homeassistant.util.enum import try_parse_enum
 
-from .entity import (
-    EsphomeEntity,
-    convert_api_error_ha_error,
-    esphome_state_property,
-    platform_async_setup_entry,
-)
+from .entity import (EsphomeEntity, convert_api_error_ha_error,
+                     esphome_state_property, platform_async_setup_entry)
 
 PARALLEL_UPDATES = 0
 

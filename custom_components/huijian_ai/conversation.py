@@ -2,19 +2,18 @@ import json
 import logging
 
 import anyio
+from homeassistant.components import conversation
+from homeassistant.components.conversation import DOMAIN as ENTITY_DOMAIN
+from homeassistant.components.conversation import ChatLog
+from homeassistant.components.conversation import \
+    ConversationEntity as BaseEntity
+from homeassistant.components.conversation import (ConversationInput,
+                                                   ConversationResult)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.components import conversation
-from homeassistant.components.conversation import (
-    DOMAIN as ENTITY_DOMAIN,
-    ConversationEntity as BaseEntity,
-    ConversationInput,
-    ConversationResult,
-    ChatLog,
-)
-from homeassistant.const import MATCH_ALL
 from homeassistant.helpers import device_registry as dr
-from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
 from .huijian import get_entry_data, llm_transport
@@ -22,9 +21,12 @@ from .huijian import get_entry_data, llm_transport
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities
+):
     """Set up conversation entities."""
     async_add_entities([HuijianConversationEntity(hass, config_entry)])
+
 
 class HuijianConversationEntity(BaseEntity):
     domain = ENTITY_DOMAIN
@@ -42,7 +44,6 @@ class HuijianConversationEntity(BaseEntity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
-    
     @property
     def supported_languages(self):
         """Return a list of supported languages."""
@@ -84,13 +85,16 @@ class HuijianConversationEntity(BaseEntity):
         user_input: ConversationInput,
         chat_log: conversation.ChatLog,
     ):
-        await transport.send_message(json.dumps({
-            "type": "listen",
-            "state": "detect",
-            "text": user_input.text,
-        }))
+        await transport.send_message(
+            json.dumps(
+                {
+                    "type": "listen",
+                    "state": "detect",
+                    "text": user_input.text,
+                }
+            )
+        )
         async for content in chat_log.async_add_delta_content_stream(
-            self.entity_id,
-            self._await_message_with_timeout(transport)
+            self.entity_id, self._await_message_with_timeout(transport)
         ):
             _LOGGER.info("LLM response: %s", content)

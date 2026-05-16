@@ -1,16 +1,18 @@
 import logging
-import anyio
-import aiohttp
-from custom_components.huijian_ai.entry_data import ESPHomeConfigEntry
-from mcp import types
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import llm
+import aiohttp
+import anyio
 from homeassistant.components import conversation
 from homeassistant.components.mcp_server.server import create_server
 from homeassistant.components.mcp_server.session import Session, SessionManager
-from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import llm
+from mcp import types
+
+from custom_components.huijian_ai.entry_data import ESPHomeConfigEntry
+
 from ..const import DOMAIN
 from . import EntryAuthFailedError, get_entry_data
 from .ws_transport import WsTransport
@@ -28,6 +30,7 @@ ATTR_TRANSPORT = "mcp_transport"
 # 全局 MCP 连接 ID 计数器
 mcp_transport_id = 0
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ESPHomeConfigEntry):
     """Set up MCP Server from a config entry."""
     # 添加设备 或 重新配置
@@ -36,7 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESPHomeConfigEntry):
     endpoint: str | None = entry.data.get(ATTR_ENDPOINT)
     if not endpoint:
         raise EntryAuthFailedError(hass, entry)
-    
+
     this_data = get_entry_data(hass, entry)
     transport: McpTransport | None = this_data.pop(ATTR_TRANSPORT, None)
     _LOGGER.info("Setup mcp endpoint entry: %s", [entry.title, transport])
@@ -45,20 +48,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESPHomeConfigEntry):
             await transport.stop("Reconfigure")
         except Exception as err:
             _LOGGER.error("Error stopping existing transport: %s", err)
-    
+
     global mcp_transport_id
     mcp_transport_id += 1
-    _LOGGER.info("Set mcp endpoint and ensure connected: endpoint=%s id=%s", endpoint, mcp_transport_id)
+    _LOGGER.info(
+        "Set mcp endpoint and ensure connected: endpoint=%s id=%s",
+        endpoint,
+        mcp_transport_id,
+    )
     logger = logging.getLogger(__name__ + "." + str(mcp_transport_id))
     transport = McpTransport(hass, entry, endpoint, ATTR_ENDPOINT, logger)
     this_data[ATTR_TRANSPORT] = transport
     await transport.ensure_connected()
-    
+
     return True
 
 
 class McpTransport(WsTransport):
     """Handles WebSocket transport for MCP server."""
+
     _transport_type = "mcp"
 
     async def _create_server(self, context: llm.LLMContext):
@@ -74,7 +82,7 @@ class McpTransport(WsTransport):
         if not self.endpoint:
             self.logger.error("No endpoint configured in config entry")
             return False
-        
+
         if not self.should_reconnect:
             # 提前终止
             self.logger.info("Interrupted before connect to client")
@@ -91,14 +99,18 @@ class McpTransport(WsTransport):
             )
             self._mcp_server = await self._create_server(context)
             self._mcp_server.version = "2.2.0"
-            options = await self.hass.async_add_executor_job(self._mcp_server.create_initialization_options)
+            options = await self.hass.async_add_executor_job(
+                self._mcp_server.create_initialization_options
+            )
 
             session_manager = SessionManager()
             async with session_manager.create(Session(self._recv_writer)) as session_id:
                 await self._establish_websocket_connection_with_options(options)
 
         except Exception as err:
-            self.logger.exception("Failed to connect to websocket at %s: %s", self.endpoint, err)
+            self.logger.exception(
+                "Failed to connect to websocket at %s: %s", self.endpoint, err
+            )
             raise
 
         return self.should_reconnect
@@ -122,18 +134,22 @@ class McpTransport(WsTransport):
                         # 提前终止
                         self.logger.info("Interrupted after websocket connected")
                         return
-                    
+
                     self._current_ws = ws
                     self._is_connected = True
                     self.update_activity_time()
                     self.reconnect_times = 0
                     async with anyio.create_task_group() as tg:
                         try:
-                            tg.start_soon(self._handle_incoming_messages, tg.cancel_scope)
+                            tg.start_soon(
+                                self._handle_incoming_messages, tg.cancel_scope
+                            )
                             tg.start_soon(self._handle_outgoing_messages)
                             tg.start_soon(self._heartbeat_task)
                             try:
-                                await self._mcp_server.run(self._recv_reader, self._send_writer, options)
+                                await self._mcp_server.run(
+                                    self._recv_reader, self._send_writer, options
+                                )
                             except Exception as err:
                                 self.logger.error("Error in server run: %s", err)
                         except Exception as err:
@@ -146,7 +162,7 @@ class McpTransport(WsTransport):
                     self.should_reconnect = False
                     self.logger.warning("WebSocket unauthorized, disable reconnect")
                     self.clear_endpoint_from_data()
-                    
+
                     raise EntryAuthFailedError(self.hass, self.entry)
             except Exception as err:
                 self.logger.exception("WebSocket connection failed: %s", err)
@@ -158,12 +174,16 @@ class McpTransport(WsTransport):
         """Handle outgoing messages to WebSocket."""
         try:
             async for session_message in self._send_reader:
-                if SessionMessage is not None and isinstance(session_message, SessionMessage):
+                if SessionMessage is not None and isinstance(
+                    session_message, SessionMessage
+                ):
                     message = session_message.message
                 else:
                     message = session_message
                 self.logger.info("Send message: %s", message)
-                await self._current_ws.send_str(message.model_dump_json(by_alias=True, exclude_none=True))
+                await self._current_ws.send_str(
+                    message.model_dump_json(by_alias=True, exclude_none=True)
+                )
         except Exception as err:
             self.logger.error("Error writing to WebSocket: %s", str(err), exc_info=True)
         finally:
@@ -189,7 +209,10 @@ class McpTransport(WsTransport):
         entry = self.entry
         this_data: dict = get_entry_data(self.hass, entry)
         transport: McpTransport | None = this_data.pop(ATTR_TRANSPORT, None)
-        self.logger.info("Remove entry from MCP transport: title=%s id=%s", entry.title, entry.entry_id)
+        self.logger.info(
+            "Remove entry from MCP transport: title=%s id=%s",
+            entry.title,
+            entry.entry_id,
+        )
         if transport:
             await transport.stop("Remove entry")
-            

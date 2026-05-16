@@ -38,17 +38,27 @@ async def _resolve_entity_id(
     if state is not None:
         return entity_id, None
 
-    _LOGGER.info(f"Entity '{entity_id}' not found, searching for matching sensor...")
+    _LOGGER.info("Entity '%s' not found, searching for matching sensor...", entity_id)
 
-    raw_entity_id = entity_id.replace("sensor.", "").replace("binary_sensor.", "").lower()
-    search_parts = [p for p in raw_entity_id.replace("_", " ").replace(".", " ").split() if len(p) > 1]
+    raw_entity_id = (
+        entity_id.replace("sensor.", "").replace("binary_sensor.", "").lower()
+    )
+    search_parts = [
+        p
+        for p in raw_entity_id.replace("_", " ").replace(".", " ").split()
+        if len(p) > 1
+    ]
 
     friendly_keywords = []
     for part in search_parts:
         kw_map = {
-            "temperature": "温度", "temp": "温度",
-            "humidity": "湿度", "humi": "湿度",
-            "illuminance": "光照", "light": "光照", "illumi": "光照",
+            "temperature": "温度",
+            "temp": "温度",
+            "humidity": "湿度",
+            "humi": "湿度",
+            "illuminance": "光照",
+            "light": "光照",
+            "illumi": "光照",
             "pressure": "气压",
             "power": "功率",
             "energy": "用电",
@@ -109,7 +119,7 @@ async def _resolve_entity_id(
                 guessed_classes.append(dc)
                 break
 
-    _LOGGER.info(f"Guessed device classes from '{raw_entity_id}': {guessed_classes}")
+    _LOGGER.info("Guessed device classes from '%s': %s", raw_entity_id, guessed_classes)
 
     def _name_matches(s, parts):
         name_lower = (s.attributes.get("friendly_name", "") or "").lower()
@@ -135,25 +145,36 @@ async def _resolve_entity_id(
                 seen_ids.add(eid)
                 matched_by_class.append(s)
 
-    _LOGGER.info(f"Sensors matched by device_class {guessed_classes}: {[s.entity_id for s in matched_by_class]}")
+    _LOGGER.info(
+        f"Sensors matched by device_class {guessed_classes}: {[s.entity_id for s in matched_by_class]}"
+    )
 
     matched_by_name = []
     for s in matched_by_class:
         if _name_matches(s, search_parts + friendly_keywords):
             matched_by_name.append(s)
 
-    _LOGGER.info(f"Name-matched candidates: {[s.entity_id for s in matched_by_name]}")
+    _LOGGER.info("Name-matched candidates: %s", [s.entity_id for s in matched_by_name])
 
     if len(matched_by_name) == 1:
         resolved = matched_by_name[0].entity_id
-        return resolved, f"已将传感器修正为：{matched_by_name[0].attributes.get('friendly_name', resolved)}"
+        return (
+            resolved,
+            f"已将传感器修正为：{matched_by_name[0].attributes.get('friendly_name', resolved)}",
+        )
 
     if len(matched_by_name) > 1:
-        return None, f"找到多个{guessed_classes[0] if guessed_classes else ''}传感器：{', '.join(s.entity_id for s in matched_by_name)}，请指定正确的传感器名称"
+        return (
+            None,
+            f"找到多个{guessed_classes[0] if guessed_classes else ''}传感器：{', '.join(s.entity_id for s in matched_by_name)}，请指定正确的传感器名称",
+        )
 
     if len(matched_by_class) == 1:
         resolved = matched_by_class[0].entity_id
-        return resolved, f"已将传感器修正为：{matched_by_class[0].attributes.get('friendly_name', resolved)}"
+        return (
+            resolved,
+            f"已将传感器修正为：{matched_by_class[0].attributes.get('friendly_name', resolved)}",
+        )
 
     all_candidates = []
     seen_ids = set()
@@ -166,14 +187,20 @@ async def _resolve_entity_id(
                 seen_ids.add(eid)
                 all_candidates.append(s)
 
-    _LOGGER.info(f"All-sensor candidates: {[s.entity_id for s in all_candidates]}")
+    _LOGGER.info("All-sensor candidates: %s", [s.entity_id for s in all_candidates])
 
     if len(all_candidates) == 1:
         resolved = all_candidates[0].entity_id
-        return resolved, f"已将传感器修正为：{all_candidates[0].attributes.get('friendly_name', resolved)}"
+        return (
+            resolved,
+            f"已将传感器修正为：{all_candidates[0].attributes.get('friendly_name', resolved)}",
+        )
 
     if len(all_candidates) > 1:
-        return None, f"找到多个传感器：{', '.join(s.entity_id for s in all_candidates)}，请指定正确的传感器名称"
+        return (
+            None,
+            f"找到多个传感器：{', '.join(s.entity_id for s in all_candidates)}，请指定正确的传感器名称",
+        )
 
     return None, f"未在 HA 中找到匹配的传感器"
 
@@ -211,7 +238,9 @@ class AutomationStore:
         data = await self._load_data()
         return data.get("automations", {}).get(automation_id)
 
-    async def create_automation(self, trigger: dict, actions: list[dict]) -> tuple[bool, str]:
+    async def create_automation(
+        self, trigger: dict, actions: list[dict]
+    ) -> tuple[bool, str]:
         async with self._lock:
             data = await self._load_data()
 
@@ -226,10 +255,12 @@ class AutomationStore:
 
             data.setdefault("automations", {})[automation_id] = automation
             await self._save_data(data)
-            _LOGGER.info(f"Created automation: {automation_id}")
+            _LOGGER.info("Created automation: %s", automation_id)
             return True, automation_id
 
-    async def update_automation(self, automation_id: str, trigger: dict | None, actions: list[dict] | None) -> tuple[bool, str]:
+    async def update_automation(
+        self, automation_id: str, trigger: dict | None, actions: list[dict] | None
+    ) -> tuple[bool, str]:
         async with self._lock:
             data = await self._load_data()
             if automation_id not in data.get("automations", {}):
@@ -243,7 +274,7 @@ class AutomationStore:
             automation["updated_at"] = datetime.now().isoformat() + "Z"
 
             await self._save_data(data)
-            _LOGGER.info(f"Updated automation: {automation_id}")
+            _LOGGER.info("Updated automation: %s", automation_id)
             return True, f"已更新自动化：{automation_id}"
 
     async def delete_automation(self, automation_id: str) -> tuple[bool, str]:
@@ -254,7 +285,7 @@ class AutomationStore:
 
             del data["automations"][automation_id]
             await self._save_data(data)
-            _LOGGER.info(f"Deleted automation: {automation_id}")
+            _LOGGER.info("Deleted automation: %s", automation_id)
             return True, f"已删除自动化：{automation_id}"
 
 
@@ -276,6 +307,7 @@ class AutomationManager:
         self._hass = hass
         self._store = get_automation_store(hass)
         self._unsub = None
+        self._tracked_entity_ids: set[str] = set()
         self._triggered_cache: dict[str, float] = {}
         self._trigger_logs: list[dict] = []
         self._max_logs = 200
@@ -295,24 +327,45 @@ class AutomationManager:
     def trigger_logs(self) -> list[dict]:
         return list(self._trigger_logs)
 
-    def _add_trigger_log(self, automation_id: str, entity_id: str, value: str, reason: str):
-        self._trigger_logs.append({
-            "automation_id": automation_id,
-            "entity_id": entity_id,
-            "value": value,
-            "reason": reason,
-            "triggered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        })
+    def _add_trigger_log(
+        self, automation_id: str, entity_id: str, value: str, reason: str
+    ):
+        self._trigger_logs.append(
+            {
+                "automation_id": automation_id,
+                "entity_id": entity_id,
+                "value": value,
+                "reason": reason,
+                "triggered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
         if len(self._trigger_logs) > self._max_logs:
-            self._trigger_logs = self._trigger_logs[-self._max_logs:]
+            self._trigger_logs = self._trigger_logs[-self._max_logs :]
 
     async def async_start(self):
         _LOGGER.info("AutomationManager starting...")
+        await self._update_tracked_entities()
         self._unsub = self._hass.bus.async_listen(
             EVENT_STATE_CHANGED,
             self._async_state_changed,
         )
-        _LOGGER.info("AutomationManager started - monitoring all state changes")
+        _LOGGER.info(
+            "AutomationManager started - monitoring %s entities",
+            len(self._tracked_entity_ids),
+        )
+
+    async def _update_tracked_entities(self):
+        automations = await self._store.get_all_automations()
+        entity_ids = set()
+        for auto in automations:
+            trigger = auto.get("trigger", {})
+            entity_id = (trigger.get("entity_id", "") or "").strip()
+            if entity_id:
+                entity_ids.add(entity_id)
+        self._tracked_entity_ids = entity_ids
+
+    async def async_refresh_tracked_entities(self):
+        await self._update_tracked_entities()
 
     async def async_stop(self):
         if self._unsub:
@@ -329,7 +382,12 @@ class AutomationManager:
             return
         if new_state.state == old_state.state:
             return
-        self._hass.async_create_task(self._async_check_automations(entity_id, new_state.state))
+        # Only process entities that are tracked by automations
+        if entity_id not in self._tracked_entity_ids:
+            return
+        self._hass.async_create_task(
+            self._async_check_automations(entity_id, new_state.state)
+        )
 
     async def _async_check_automations(self, entity_id: str, state_str: str):
         try:
@@ -364,26 +422,47 @@ class AutomationManager:
                             condition_met = False
 
                     if not condition_met:
-                        _LOGGER.debug(f"Condition not met for {automation.get('automation_id')} ({entity_id}={value})")
+                        _LOGGER.debug(
+                            "Condition not met for %s (%s=%s)",
+                            automation.get("automation_id"),
+                            entity_id,
+                            value,
+                        )
                         continue
 
                     automation_id = automation.get("automation_id", "")
                     now = datetime.now().timestamp()
                     last = self._triggered_cache.get(automation_id, 0)
                     if now - last < self._debounce_seconds:
-                        _LOGGER.debug(f"Automation {automation_id} debounced ({entity_id}={value})")
+                        _LOGGER.debug(
+                            "Automation %s debounced (%s=%s)",
+                            automation_id, entity_id, value,
+                        )
                         continue
 
                     self._triggered_cache[automation_id] = now
-                    _LOGGER.info(f"Automation triggered: {automation_id} ({entity_id}={value})")
-                    self._add_trigger_log(automation_id, entity_id, state_str, f"条件满足({above}/{below})")
+                    _LOGGER.info(
+                        "Automation triggered: %s (%s=%s)",
+                        automation_id, entity_id, value,
+                    )
+                    self._add_trigger_log(
+                        automation_id,
+                        entity_id,
+                        state_str,
+                        f"条件满足({above}/{below})",
+                    )
                     await self._execute_actions(automation.get("actions", []))
                 except Exception as e:
-                    _LOGGER.error(f"Error checking automation {automation.get('automation_id', 'unknown')}: {e}")
+                    _LOGGER.error(
+                        "Error checking automation %s: %s",
+                        automation.get("automation_id", "unknown"), e,
+                    )
         except Exception as e:
-            _LOGGER.error(f"Error in _async_check_automations: {e}")
+            _LOGGER.error("Error in _async_check_automations: %s", e)
 
-    async def _check_immediate(self, trigger: dict, actions: list[dict], automation_id: str):
+    async def _check_immediate(
+        self, trigger: dict, actions: list[dict], automation_id: str
+    ):
         """创建自动化后立即检查当前传感器值是否已满足条件。"""
         entity_id = (trigger.get("entity_id", "") or "").strip()
         if not entity_id:
@@ -391,13 +470,15 @@ class AutomationManager:
 
         state = self._hass.states.get(entity_id)
         if state is None or state.state is None:
-            _LOGGER.debug(f"Immediate check: {entity_id} has no state")
+            _LOGGER.debug("Immediate check: %s has no state", entity_id)
             return
 
         try:
             value = float(state.state)
         except (ValueError, TypeError):
-            _LOGGER.debug(f"Immediate check: {entity_id} state not numeric ({state.state})")
+            _LOGGER.debug(
+                "Immediate check: %s state not numeric (%s)", entity_id, state.state,
+            )
             return
 
         above = trigger.get("above")
@@ -412,26 +493,38 @@ class AutomationManager:
                 condition_met = False
 
         if not condition_met:
-            _LOGGER.debug(f"Immediate check: condition not met for {automation_id} ({entity_id}={value})")
+            _LOGGER.debug(
+                "Immediate check: condition not met for %s (%s=%s)",
+                automation_id, entity_id, value,
+            )
             return
 
         now = datetime.now().timestamp()
         self._triggered_cache[automation_id] = now
-        _LOGGER.info(f"Automation triggered (initial check): {automation_id} ({entity_id}={value})")
-        self._add_trigger_log(automation_id, entity_id, state.state, f"初始检查条件满足({above}/{below})")
+        _LOGGER.info(
+            "Automation triggered (initial check): %s (%s=%s)",
+            automation_id, entity_id, value,
+        )
+        self._add_trigger_log(
+            automation_id, entity_id, state.state, f"初始检查条件满足({above}/{below})"
+        )
         await self._execute_actions(actions)
 
     async def _execute_actions(self, actions: list[dict]):
         for action in actions:
             intent_name = action.get("intent") or action.get("name")
             params = action.get("params") or action.get("parameters", {})
-            _LOGGER.info(f"Executing automation action: intent={intent_name}")
+            _LOGGER.info("Executing automation action: intent=%s", intent_name)
 
             if intent_name not in [
-                "TurnDeviceOn", "TurnDeviceOff", "ControlWindow", "WindowControl",
-                "AdjustDeviceAttribute", "SetDeviceMode",
+                "TurnDeviceOn",
+                "TurnDeviceOff",
+                "ControlWindow",
+                "WindowControl",
+                "AdjustDeviceAttribute",
+                "SetDeviceMode",
             ]:
-                _LOGGER.error(f"Unsupported intent: {intent_name}")
+                _LOGGER.error("Unsupported intent: %s", intent_name)
                 continue
 
             normalized_name = intent_name
@@ -448,9 +541,9 @@ class AutomationManager:
                     assistant=None,
                     device_id=None,
                 )
-                _LOGGER.info(f"Automation action success: {intent_name}")
+                _LOGGER.info("Automation action success: %s", intent_name)
             except Exception as e:
-                _LOGGER.error(f"Automation action failed: {intent_name}: {e}")
+                _LOGGER.error("Automation action failed: %s: %s", intent_name, e)
 
 
 def get_automation_manager(hass: HomeAssistant) -> AutomationManager:
@@ -489,7 +582,7 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
 
     async def async_handle(self, intent_obj: ha_intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"HassCreateAutomation slots={slots}")
+        _LOGGER.info("HassCreateAutomation slots=%s", slots)
 
         trigger = slots.get("trigger", {}).get("value", {})
         actions = slots.get("actions", {}).get("value", [])
@@ -503,26 +596,30 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
 
         resolved, warning = await _resolve_entity_id(intent_obj.hass, trigger)
         if resolved is None:
-            return {"success": False, "error": warning or f"传感器 {trigger.get('entity_id', '')} 不存在"}
+            return {
+                "success": False,
+                "error": warning or f"传感器 {trigger.get('entity_id', '')} 不存在",
+            }
         if resolved != trigger.get("entity_id", "").lower():
-            _LOGGER.info(f"Entity auto-resolved: {trigger['entity_id']} -> {resolved}")
+            _LOGGER.info("Entity auto-resolved: %s -> %s", trigger["entity_id"], resolved)
             trigger["entity_id"] = resolved
 
         split_actions = split_actions_by_device(actions)
-        _LOGGER.info(f"HassCreateAutomation split_actions={split_actions}")
+        _LOGGER.info("HassCreateAutomation split_actions=%s", split_actions)
 
         store = get_automation_store(intent_obj.hass)
         success, result = await store.create_automation(trigger, split_actions)
 
         if success:
             manager = get_automation_manager(intent_obj.hass)
+            await manager.async_refresh_tracked_entities()
             if manager._unsub is None:
                 await manager.async_start()
 
             try:
                 await manager._check_immediate(trigger, split_actions, result)
             except Exception as e:
-                _LOGGER.error(f"Immediate check failed: {e}")
+                _LOGGER.error("Immediate check failed: %s", e)
 
             entity_id = trigger.get("entity_id", "")
             above = trigger.get("above")
@@ -559,7 +656,7 @@ class HassDeleteAutomationIntent(ha_intent.IntentHandler):
 
     async def async_handle(self, intent_obj: ha_intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"HassDeleteAutomation slots={slots}")
+        _LOGGER.info("HassDeleteAutomation slots=%s", slots)
 
         automation_id = slots.get("automation_id", {}).get("value", "")
         if not automation_id:
@@ -567,6 +664,10 @@ class HassDeleteAutomationIntent(ha_intent.IntentHandler):
 
         store = get_automation_store(intent_obj.hass)
         success, message = await store.delete_automation(automation_id)
+
+        if success:
+            manager = get_automation_manager(intent_obj.hass)
+            await manager.async_refresh_tracked_entities()
 
         return {
             "success": success,
@@ -625,7 +726,7 @@ class HassUpdateAutomationIntent(ha_intent.IntentHandler):
 
     async def async_handle(self, intent_obj: ha_intent.Intent) -> JsonObjectType:
         slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info(f"HassUpdateAutomation slots={slots}")
+        _LOGGER.info("HassUpdateAutomation slots=%s", slots)
 
         automation_id = slots.get("automation_id", {}).get("value", "")
         trigger_raw = slots.get("trigger", {}).get("value")
@@ -651,7 +752,13 @@ class HassUpdateAutomationIntent(ha_intent.IntentHandler):
         if actions_raw:
             actions = split_actions_by_device(actions_raw)
 
-        success, message = await store.update_automation(automation_id, trigger, actions)
+        success, message = await store.update_automation(
+            automation_id, trigger, actions
+        )
+
+        if success:
+            manager = get_automation_manager(intent_obj.hass)
+            await manager.async_refresh_tracked_entities()
 
         return {
             "success": success,

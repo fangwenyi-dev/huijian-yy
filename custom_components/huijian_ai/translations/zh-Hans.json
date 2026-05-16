@@ -89,7 +89,8 @@
             }
         },
         "progress": {
-            "qrcode": "{tip}"
+            "qrcode": "{tip}",
+            "waiting_for_device": "等待设备确认..."
         }
     },
     "entity": {

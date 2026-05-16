@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
+from datetime import timedelta
 
 from awesomeversion import AwesomeVersion
 from esphome_dashboard_api import ConfiguredDevice, ESPHomeDashboardAPI
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
