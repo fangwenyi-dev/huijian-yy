@@ -299,11 +299,11 @@ class ConfigFlowHandler(ConfigFlow, BaseFlow, domain=DOMAIN):
         )
 
     async def _wait_for_setup_data(self):
-        for _ in range(1000):
+        for _ in range(200):
             if self.setup_data:
                 return
             await asyncio.sleep(0.3)
-        _LOGGER.error("Timeout waiting for setup data for %s", self.setup_uuid)
+        _LOGGER.warning("Timeout waiting for setup data for %s", self.setup_uuid)
 
     def _get_reconfig_entry(self):
         if getattr(self, "_reauth_entry", None):
