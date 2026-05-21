@@ -86,7 +86,7 @@ class HuijianControlAPI(llm.API):
     @callback
     def _build_entity_prompt(self, llm_context: llm.LLMContext | None = None) -> str:
         """Build operation guide (no device list — use HuijianGetLiveContext for states)."""
-        from homeassistant.components.homeassistant import async_should_expose
+        from .intent_live_context import async_should_expose
 
         parts = [
             "操作指南:",
