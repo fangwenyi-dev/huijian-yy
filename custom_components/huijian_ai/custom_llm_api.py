@@ -2,6 +2,7 @@ import logging
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import intent, llm
 
@@ -91,16 +92,14 @@ class HuijianControlAPI(llm.API):
 
         area_entities: dict[str, list[str]] = {}
         no_area_entities: list[str] = []
-        count = 0
 
         for state in self.hass.states.async_all():
-            if count >= _MAX_ENTITIES:
+            if len(area_entities) + len(no_area_entities) >= _MAX_ENTITIES:
                 break
             domain = state.domain
             entry = entity_reg.async_get(state.entity_id)
             if not entry or entry.hidden_by or entry.disabled_by:
                 continue
-            count += 1
             name = state.name
             area_name = None
             if entry.area_id:
@@ -149,12 +148,12 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "ControlWindow",
-                "窗户控制 ● open(开) close(关) pause(暂停) A/tilt(内倒/内岛) "
+                "窗户控制 ● open(开) close(关) pause(暂停) tilt(内倒/内岛) "
                 "● 窗类型: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/智能窗/窗户 "
                 "● 非窗户设备用DeviceControl",
                 self._handle_control_window,
                 vol.Schema({
-                    vol.Required("action"): vol.In(["open", "close", "pause", "A", "tilt"]),
+                    vol.Required("action"): vol.In(["open", "close", "pause", "tilt"]),
                     vol.Required("target"): _target_schema(),
                 }),
             ),
@@ -166,9 +165,9 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassCreateVoiceScene",
-                "Create voice scene: '当我说xxx时帮我yyy'. "
-                "Params: trigger_phrase, actions[]. Window cmds use TurnDeviceOn/Off (auto-converted). "
-                "NOT for sensor triggers (use HassCreateAutomation).",
+                "创建语音场景 ● 用户说'当我说xxx时帮我yyy'时使用 "
+                "● 参数: trigger_phrase(触发短语), actions[](动作数组) "
+                "● 传感器触发请用HassCreateAutomation",
                 self._call_intent_factory("HassCreateVoiceScene"),
                 vol.Schema({
                     vol.Required("trigger_phrase"): cv.string,
@@ -177,13 +176,13 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassTriggerVoiceScene",
-                "Trigger a voice scene by trigger_phrase.",
+                "触发语音场景 ● 按trigger_phrase触发已创建的场景",
                 self._call_intent_factory("HassTriggerVoiceScene"),
                 vol.Schema({vol.Required("trigger_phrase"): cv.string}),
             ),
             _Tool(
                 "HassDeleteVoiceScene",
-                "Delete a voice scene by trigger_phrase or scene_id.",
+                "删除语音场景 ● 按trigger_phrase或scene_id删除",
                 self._call_intent_factory("HassDeleteVoiceScene"),
                 vol.Schema({
                     vol.Optional("trigger_phrase"): cv.string,
@@ -192,7 +191,7 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassListVoiceScenes",
-                "List all voice scenes.",
+                "列出所有语音场景 ● 无需参数",
                 self._call_intent_factory("HassListVoiceScenes"),
                 vol.Schema({}),
             ),
@@ -261,7 +260,7 @@ class HuijianControlAPI(llm.API):
                 assistant=assistant,
                 device_id=llm_context.device_id if llm_context else None,
             )
-        except Exception as e:
+        except (intent.IntentHandleError, HomeAssistantError, vol.Invalid) as e:
             _LOGGER.error("Intent %s failed: %s", intent_type, e)
             return {"success": False, "error": str(e)}
 
