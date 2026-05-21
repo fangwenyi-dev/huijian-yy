@@ -85,10 +85,10 @@ class HuijianControlAPI(llm.API):
         return [
             _Tool(
                 "DeviceControl",
-                "Control ALL Home Assistant devices via turn_on/turn_off/adjust/set_mode. "
-                "Use for: light/switch/fan/cover/climate/media_player/lock/valve/vacuum/button. "
-                "NOT for ESP32 onboard lamp (use self_lamp tools for that). "
-                "Window names auto-forwarded to ControlWindow.",
+                "通用设备控制工具，用于控制Home Assistant中所有支持开/关/调节/设模式的设备，包括：灯、开关、风扇、窗帘、空调、音响、锁、阀门、扫地机。"
+                "action参数: turn_on(开), turn_off(关), adjust(调节属性), set_mode(设置模式)。"
+                "如果设备名称包含'窗'/'窗户'等窗户关键词，会自动转发到ControlWindow处理。"
+                "注意：ESP32设备自带的灯(self_lamp_*工具)请使用对应的self_lamp工具，不要使用本工具。",
                 self._handle_device_control,
                 vol.Schema({
                     vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),
@@ -100,7 +100,10 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "ControlWindow",
-                "Window-only: open(开)/close(关)/pause(暂停)/tilt(内倒). 平推窗/平开窗/推拉窗/天窗/飘窗/智能窗.",
+                "窗户控制专用工具。只有窗户相关的操作才使用本工具。"
+                "action参数: open(开/开启), close(关/关闭), pause(暂停/停止), A或tilt(内倒/内岛)。"
+                "支持的窗户类型: 平推窗、平开窗、推拉窗、内开窗、外开窗、天窗、飘窗、推拉门、内开内倒窗、单内倒窗、外装平开窗、智能窗、窗户。"
+                "非窗户设备的开关请使用DeviceControl。",
                 self._handle_control_window,
                 vol.Schema({
                     vol.Required("action"): vol.In(["open", "close", "pause", "A", "tilt"]),
@@ -109,13 +112,17 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HuijianGetLiveContext",
-                "Get current state/value/mode of ALL devices and sensors. Call BEFORE making any control decision.",
+                "获取所有设备和传感器的实时状态。在进行任何控制操作之前，如果依赖当前设备状态做决策，必须先调用本工具获取最新信息。"
+                "例如：判断灯是否开着、当前温度是多少、某个区域有哪些设备。",
                 self._call_intent_factory("huijianGetLiveContext"),
                 vol.Schema({}),
             ),
             _Tool(
                 "HassCreateVoiceScene",
-                "Create voice scene by trigger phrase and actions.",
+                "创建语音场景。当用户说'当我说xxx时帮我执行yyy'、'你听到我说xxx就yyy'时使用本工具。"
+                "参数: trigger_phrase(触发短语), actions(要执行的动作数组)。"
+                "注意：如果涉及开窗/关窗，actions中请使用TurnDeviceOn/TurnDeviceOff(系统会自动转为ControlWindow)。"
+                "传感器触发的自动化请使用HassCreateAutomation，不要使用本工具。",
                 self._call_intent_factory("HassCreateVoiceScene"),
                 vol.Schema({
                     vol.Required("trigger_phrase"): cv.string,
@@ -124,13 +131,14 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassTriggerVoiceScene",
-                "Trigger a voice scene by trigger_phrase.",
+                "触发一个已创建的语音场景。当用户说出语音场景的触发短语时使用本工具。"
+                "参数: trigger_phrase(要触发的语音场景的短语)。",
                 self._call_intent_factory("HassTriggerVoiceScene"),
                 vol.Schema({vol.Required("trigger_phrase"): cv.string}),
             ),
             _Tool(
                 "HassDeleteVoiceScene",
-                "Delete a voice scene by trigger_phrase or scene_id.",
+                "删除一个已创建的语音场景。按trigger_phrase或scene_id删除。",
                 self._call_intent_factory("HassDeleteVoiceScene"),
                 vol.Schema({
                     vol.Optional("trigger_phrase"): cv.string,
@@ -139,7 +147,7 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassListVoiceScenes",
-                "List all voice scenes.",
+                "列出所有已创建的语音场景。无需参数。",
                 self._call_intent_factory("HassListVoiceScenes"),
                 vol.Schema({}),
             ),
