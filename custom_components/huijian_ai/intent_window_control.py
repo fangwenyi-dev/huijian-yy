@@ -45,11 +45,8 @@ async def _press_multi_buttons(
 class ControlWindowIntent(intent.IntentHandler):
     intent_type = "ControlWindow"
     description = (
-        "Unified entry for ALL window commands (open/close/pause/tilt). "
-        "Action keywords: 开/开启=open, 关/关闭=close, 暂停/停止/停=pause, 内倒/内岛=A(tilt). "
-        "Examples: '内岛展厅窗户' -> action=A, area=展厅, name=窗户. "
-        "'打开平推窗' -> action=open, name=平推窗. "
-        "Valid window names: 平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户."
+        "Window commands: open(开)/close(关)/pause(暂停)/tilt(内倒). "
+        "Window types: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/推拉门/内开内倒窗/单内倒窗/外装平开窗/智能窗/窗户."
     )
 
     @property

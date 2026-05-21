@@ -158,10 +158,8 @@ def find_speaker_area(hass: HomeAssistant, speaker_id: str) -> ar.AreaEntry | No
 class HuijianGetLiveContextIntent(intent.IntentHandler):
     intent_type = "huijianGetLiveContext"
     description = (
-        "Provides real-time information about the CURRENT state, value, or mode of devices, sensors, entities, or areas. "
-        "Use this tool for: "
-        "1. Answering questions about current conditions (e.g., 'Is the light on?'). "
-        "2. As the first step in conditional actions (e.g., 'If there is someone in the bedroom, turn on the bedroom light'), checking if there's anyone present is required."
+        "Get current state/value/mode of ALL devices and sensors. "
+        "Call this BEFORE making control decisions that depend on current state."
     )
 
     @property

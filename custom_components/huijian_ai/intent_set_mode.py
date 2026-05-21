@@ -98,10 +98,7 @@ def set_humidifier_mode(ctx: OperationContext, target: OperationTarget):
 class SetDeviceModeIntent(intent.IntentHandler):
     intent_type = "SetDeviceMode"
     description = (
-        "Set the operation mode of a device. "
-        "Supported devices: climate(heat/cool/auto/dry/fan_only), humidifier. "
-        "Examples: '把空调设为制热模式' -> mode=heat, target=空调. "
-        "'把空调设为26度制冷' -> use AdjustDeviceAttribute with attribute=temperature instead."
+        "Set device mode: climate(heat/cool/auto/dry/fan_only), humidifier."
     )
     platforms = {Platform.CLIMATE, Platform.HUMIDIFIER}
 

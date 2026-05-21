@@ -182,17 +182,10 @@ def get_voice_scene_store(hass: HomeAssistant) -> VoiceSceneStore:
 class HassCreateVoiceSceneIntent(intent.IntentHandler):
     intent_type = "HassCreateVoiceScene"
     description = (
-        "Creates a voice-triggered scene that stores trigger phrase and actions. "
-        "Use ONLY when user says something like '当我说xxx的时候，帮我执行yyy', "
-        "'你听到我说xxx就yyy', '如果我说xxx就开机'. "
-        "DO NOT use for sensor/condition-based triggers (temperature, humidity, etc.) - "
-        "use HassCreateAutomation for those. "
-        "IMPORTANT WINDOW RULE: If user says '打开窗户'/'打开展厅的平推窗' etc., "
-        "use TurnDeviceOn (NOT ControlWindow). The system will auto-convert it to ControlWindow(open). "
-        "If user says '关闭窗户'/'关窗' etc., "
-        "use TurnDeviceOff. The system will auto-convert it to ControlWindow(close). "
-        "Parameters: trigger_phrase (a spoken phrase that will trigger the scene), "
-        "actions (array of intent+params objects)."
+        "Create voice scene: store trigger_phrase + actions. "
+        "Use when user says: '当我说xxx时帮我yyy'. "
+        "NOT for sensor/condition triggers (use HassCreateAutomation). "
+        "Window cmds: use TurnDeviceOn/Off (auto-converted to ControlWindow)."
     )
 
     @property
@@ -343,9 +336,7 @@ class HassCreateVoiceSceneIntent(intent.IntentHandler):
 class HassTriggerVoiceSceneIntent(intent.IntentHandler):
     intent_type = "HassTriggerVoiceScene"
     description = (
-        "Triggers an existing voice scene by its trigger phrase. "
-        "Use when user says the trigger phrase to execute a previously created scene. "
-        "Parameters: trigger_phrase (string)."
+        "Trigger a voice scene by trigger_phrase."
     )
     service_timeout = 30
 
@@ -465,9 +456,7 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
 class HassDeleteVoiceSceneIntent(intent.IntentHandler):
     intent_type = "HassDeleteVoiceScene"
     description = (
-        "Deletes an existing voice scene. "
-        "Use when user wants to delete a created scene. "
-        "Parameters: trigger_phrase (string) OR scene_id (string)."
+        "Delete a voice scene by trigger_phrase or scene_id."
     )
 
     @property
@@ -502,9 +491,7 @@ class HassDeleteVoiceSceneIntent(intent.IntentHandler):
 class HassListVoiceScenesIntent(intent.IntentHandler):
     intent_type = "HassListVoiceScenes"
     description = (
-        "Lists all stored voice scenes. "
-        "Use when user wants to see all created scenes. "
-        "No parameters required."
+        "List all voice scenes."
     )
 
     @property

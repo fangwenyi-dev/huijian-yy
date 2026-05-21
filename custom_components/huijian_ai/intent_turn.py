@@ -639,11 +639,8 @@ class TurnDeviceIntentBase(intent.IntentHandler):
 class TurnDeviceOnIntent(TurnDeviceIntentBase):
     intent_type = "TurnDeviceOn"
     description = (
-        "Turns on/opens/presses a device. "
-        "Use for: lights (e.g., '打开卧室筒灯'), buttons (e.g., '按场景按钮'), "
-        "covers/curtains (e.g., '打开窗帘'), climate/lock/valve/vacuum/alarm. "
-        "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
-        "Target format: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
+        "Turn on/open/press a device: light/cover/climate/lock/valve/vacuum/alarm/button. "
+        "Window cmds (开窗/关窗) auto-forward to ControlWindow."
     )
     service_timeout = 10
 
@@ -664,11 +661,8 @@ class TurnDeviceOnIntent(TurnDeviceIntentBase):
 class TurnDeviceOffIntent(TurnDeviceIntentBase):
     intent_type = "TurnDeviceOff"
     description = (
-        "Turns off/closes a device. "
-        "Use for: lights (e.g., '关闭卧室筒灯'), covers/curtains (e.g., '关闭窗帘'), "
-        "climate/lock/valve/vacuum/alarm. "
-        "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
-        "Target format: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
+        "Turn off/close a device: light/cover/climate/lock/valve/vacuum/alarm. "
+        "Window cmds (开窗/关窗) auto-forward to ControlWindow."
     )
     service_timeout = 10
 
