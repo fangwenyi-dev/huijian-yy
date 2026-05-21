@@ -92,7 +92,7 @@ class HuijianControlAPI(llm.API):
             "操作指南(含部分设备名参考—完整状态用HuijianGetLiveContext获取):",
             "1. 先调用HuijianGetLiveContext查看设备实时状态（含所有设备名、区域、当前值）",
             "2. 用DeviceControl控制设备: action=turn_on(开)/turn_off(关)/adjust(调)/set_mode(设模式)",
-            "3. 只有窗户相关的操作(开窗/关窗/暂停/内倒)才用ControlWindow",
+            "3. 只有窗户相关的操作(开窗/关窗/暂停/内倒/内导)才用ControlWindow",
             "4. target参数必须包含devices并指定domains（如domains:['light']表示灯）",
             "5. 实体名用中文精确匹配，区域名也用中文",
             f"6. 领域别名: {_DOMAIN_ALIASES}",
@@ -169,7 +169,7 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "ControlWindow",
-                "窗户控制 ● open(开) close(关) pause(暂停) tilt(内倒/内岛) 兼容A "
+                "窗户控制 ● open(开) close(关) pause(暂停) tilt(内倒/内岛/内导) 兼容A "
                 "● 窗类型: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/智能窗/窗户 "
                 "● 非窗户设备用DeviceControl",
                 self._handle_control_window,
