@@ -85,7 +85,10 @@ class HuijianControlAPI(llm.API):
         return [
             _Tool(
                 "DeviceControl",
-                "Control device: turn_on(开)/turn_off(关)/adjust(调亮度/温度/位置/音量/风速)/set_mode(制冷/制热/除湿/送风). Window names handled automatically.",
+                "Control ALL Home Assistant devices via turn_on/turn_off/adjust/set_mode. "
+                "Use for: light/switch/fan/cover/climate/media_player/lock/valve/vacuum/button. "
+                "NOT for ESP32 onboard lamp (use self_lamp tools for that). "
+                "Window names auto-forwarded to ControlWindow.",
                 self._handle_device_control,
                 vol.Schema({
                     vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),
