@@ -85,10 +85,12 @@ class HuijianControlAPI(llm.API):
         return [
             _Tool(
                 "DeviceControl",
-                "Control HA devices: light/switch/fan/cover/climate/media_player/lock/valve/vacuum/button. "
-                "Use turn_on/turn_off for all on/off operations. Use adjust for brightness/temp/position/volume. "
-                "Use set_mode for climate modes. Window names auto-forward to ControlWindow. "
-                "NOT for ESP32 devices (use self_* tools).",
+                "Control HA devices via turn_on/turn_off/adjust/set_mode. "
+                "Examples: '打开办公室筒灯'=turn_on(t灯), '关闭卧室灯'=turn_off(灯), "
+                "'调亮客厅灯20%'=adjust(亮度), '空调设为26度'=adjust(温度), "
+                "'空调设为制热'=set_mode(heat). "
+                "Window names(窗/窗户/平推窗等) auto-forward to ControlWindow. "
+                "NOT for ESP32 devices(self_* tools).",
                 self._handle_device_control,
                 vol.Schema({
                     vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),
@@ -100,8 +102,9 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "ControlWindow",
-                "Window-only: open/close/pause/tilt. "
-                "Types: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/推拉门/内开内倒窗/单内倒窗/外装平开窗/智能窗/窗户. "
+                "Window-only: open(开)/close(关)/pause(暂停)/tilt(内倒). "
+                "Types: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/智能窗/窗户. "
+                "Examples: '打开展厅平推窗'=open(平推窗), '关闭卧室窗'=close(窗户). "
                 "Non-window devices use DeviceControl.",
                 self._handle_control_window,
                 vol.Schema({
