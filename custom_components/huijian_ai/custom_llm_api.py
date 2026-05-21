@@ -90,9 +90,11 @@ class HuijianControlAPI(llm.API):
                 "DeviceControl",
                 "Turns on/off/adjusts a Home Assistant device. "
                 "Use for: lights (e.g., '打开办公室筒灯'), switches, fans, covers/curtains (e.g., '打开窗帘'), "
-                "climate, media_player, lock, valve, vacuum, alarm, button. "
+                "climate(空调/暖气), media_player, lock, valve, vacuum, alarm, button. "
                 "action=turn_on(开), turn_off(关), adjust(调), set_mode(设模式). "
-                "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
+                "IMPORTANT: Always include domains in target devices. "
+                "Example: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '办公室'}]. "
+                "NOTE: Window commands (开窗/关窗) auto-forward to ControlWindow. "
                 "NOT for ESP32 self_lamp* tools.",
                 self._handle_device_control,
                 vol.Schema({
