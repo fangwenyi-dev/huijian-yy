@@ -22,6 +22,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def async_should_expose(hass: HomeAssistant, assistant: str, entity_id: str) -> bool:
     """Return True if an entity should be exposed to an assistant."""
+    if DATA_EXPOSED_ENTITIES not in hass.data:
+        return True
     exposed_entities = hass.data[DATA_EXPOSED_ENTITIES]
     return exposed_entities.async_should_expose(assistant, entity_id)
 

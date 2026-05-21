@@ -114,8 +114,12 @@ class HuijianControlAPI(llm.API):
         for state in self.hass.states.async_all():
             if len(area_entities) + len(no_area_entities) >= _MAX_ENTITIES:
                 break
-            if assistant and not async_should_expose(self.hass, assistant, state.entity_id):
-                continue
+            if assistant:
+                try:
+                    if not async_should_expose(self.hass, assistant, state.entity_id):
+                        continue
+                except (KeyError, Exception):
+                    pass
             entry = entity_reg.async_get(state.entity_id)
             if not entry or entry.hidden_by or entry.disabled_by:
                 continue
