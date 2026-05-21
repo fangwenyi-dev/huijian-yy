@@ -130,7 +130,7 @@ class HuijianControlAPI(llm.API):
                 if area:
                     area_name = area.name
             aliases = entry.aliases or []
-            alias_str = f"/{'/'.join(aliases)}" if aliases else ""
+            alias_str = f"/{'/'.join(str(a) for a in aliases)}" if aliases else ""
             line = f"{name}({state.domain}{alias_str})"
             if area_name:
                 area_entities.setdefault(area_name, []).append(line)
