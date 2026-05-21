@@ -240,7 +240,7 @@ class TestAutomationView(HomeAssistantView):
 
 class CombinedManageView(HomeAssistantView):
     requires_auth = True
-    url = "/api/huijian-ai/manage-page"
+    url = "/huijian-ai/manage-page"
     name = "api:huijian-ai:manage-page"
 
     async def get(self, request: web.Request):

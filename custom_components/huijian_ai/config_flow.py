@@ -1293,7 +1293,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             )
 
         internal_url = get_url(self.hass, prefer_external=False)
-        manage_url_text = f"管理界面：{internal_url}/api/huijian-ai/manage-page"
+        manage_url_text = f"管理界面：{internal_url}/huijian-ai/manage-page"
 
         return self.async_show_form(
             step_id="init",
