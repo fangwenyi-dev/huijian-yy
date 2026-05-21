@@ -147,12 +147,10 @@ class HuijianControlAPI(llm.API):
         return [
             _Tool(
                 "DeviceControl",
-                "中文设备控制(开/关/调/设模式) ● turn_on(开) turn_off(关) adjust(调) set_mode(设模式) "
-                "● 支持: lights/covers/fans/climate/locks/valves/buttons "
-                "● 属性: brightness/color/temperature/position/fan_speed/humidity "
-                "● delta格式: +10(增) -10(减) 50(设值) 50%(百分比) max/min(极限) #FF0000(色值) "
-                "● mode: heat/cool/auto/dry/fan_only(仅气候设备) "
-                "● 窗/窗户等自动转发到ControlWindow",
+                "HA灯/开关/空调/窗帘/风扇/锁/阀门等全部HA设备的开/关/调/设模式。 "
+                "turn_on(开) turn_off(关) adjust(调) set_mode(设模式) "
+                "delta: +10增 -10减 50设值 50%百分比 max/min极限. mode: heat/cool/auto/dry/fan_only. "
+                "窗自动转发ControlWindow. ESP32板载灯(小灯)用self_lamp.",
                 self._handle_device_control,
                 vol.Schema({
                     vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),
