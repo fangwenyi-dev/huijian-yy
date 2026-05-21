@@ -23,6 +23,12 @@ WINDOW_NAME_MAPPING = {
     "窗": "窗户",
 }
 
+_WINDOW_EXCLUDES = {"窗帘", "窗台", "橱窗", "窗花", "窗框", "窗纱"}
+
+
+def _is_excluded(name: str) -> bool:
+    return any(ex in name.lower().strip() for ex in _WINDOW_EXCLUDES)
+
 WINDOW_ACTION_MAPPING = {
     "open": ["开启", "开", "open"],
     "close": ["关闭", "关", "close"],
@@ -41,7 +47,8 @@ def extract_window_name(name: str) -> str | None:
     if not name:
         return None
     name_lower = name.lower()
-    # 通用名称（"所有窗户"、"全部窗"等）不匹配具体窗户类型，返回None触发全窗查找
+    if _is_excluded(name):
+        return None
     generic_names = ["所有窗户", "所有窗", "全部窗户", "全部窗", "每个窗户", "每扇窗户"]
     if any(gn in name_lower for gn in generic_names):
         _LOGGER.info("Detected generic window name '%s', will use fallback mode", name)
@@ -189,6 +196,8 @@ def find_window_buttons(
         name = getattr(state, "name", "") or ""
         entity_id = state.entity_id
         name_lower = name.lower()
+        if _is_excluded(name):
+            continue
 
         # Check window keywords in BOTH entity name and device name.
         # Entity name may be generic ("开窗器 开启") while device name

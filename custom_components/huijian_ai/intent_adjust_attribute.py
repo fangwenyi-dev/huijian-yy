@@ -143,11 +143,11 @@ class Delta:
             elif self.special == "max":
                 target_value = max_value
             elif self.special == "low":
-                target_value = min_value
+                target_value = min_value + (max_value - min_value) * 0.25
             elif self.special == "medium":
-                raise intent.IntentHandleError("unsupported")
+                target_value = min_value + (max_value - min_value) * 0.5
             elif self.special == "high":
-                target_value = max_value
+                target_value = min_value + (max_value - min_value) * 0.75
             else:
                 raise intent.IntentHandleError("unsupported")
             return int(max(min_value, min(max_value, target_value)))

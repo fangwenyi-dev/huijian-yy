@@ -20,15 +20,25 @@ _ACTION_TO_INTENT = {
 _DOMAIN_ALIASES = "lamp→light, ac→climate, curtain→cover, window→cover/button"
 
 _WINDOW_KEYWORDS = [
-    "窗", "窗户", "平推窗", "平开窗", "推拉窗",
+    "平推窗", "平开窗", "推拉窗",
     "内开窗", "外开窗", "天窗", "飘窗", "推拉门",
     "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗",
+    "窗户", "窗",
 ]
+
+_WINDOW_EXCLUDES = {"窗帘", "窗台", "橱窗", "窗花", "窗框", "窗纱"}
 
 
 def _has_window_keyword(name: str) -> bool:
+    if not name:
+        return False
     name_lower = name.strip().lower()
-    return any(kw in name_lower for kw in _WINDOW_KEYWORDS)
+    if any(ex in name_lower for ex in _WINDOW_EXCLUDES):
+        return False
+    for kw in _WINDOW_KEYWORDS:
+        if kw in name_lower:
+            return True
+    return False
 
 
 def _build_slots(params: dict) -> dict:

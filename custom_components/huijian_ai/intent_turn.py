@@ -433,8 +433,10 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         ):
             return True
         if name:
-            from .intent_window_const import WINDOW_NAME_MAPPING
+            from .intent_window_const import WINDOW_NAME_MAPPING, _is_excluded
 
+            if _is_excluded(name):
+                return False
             name_lower = name.lower().strip()
             for key, value in WINDOW_NAME_MAPPING.items():
                 if key.lower() in name_lower or value.lower() in name_lower:
