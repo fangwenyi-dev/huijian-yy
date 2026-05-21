@@ -279,6 +279,9 @@ class HuijianControlAPI(llm.API):
         except (intent.IntentHandleError, HomeAssistantError, vol.Invalid) as e:
             _LOGGER.error("Intent %s failed: %s", intent_type, e)
             return {"success": False, "error": str(e)}
+        except Exception as e:
+            _LOGGER.error("Intent %s unexpected error: %s", intent_type, e)
+            return {"success": False, "error": f"Unexpected error: {e}"}
 
         result_text = str(response)
         if len(result_text) > 200:
