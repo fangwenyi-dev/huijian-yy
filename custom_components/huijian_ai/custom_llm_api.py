@@ -1,7 +1,7 @@
 import logging
 
 import voluptuous as vol
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import intent, llm
 
@@ -74,19 +74,48 @@ class HuijianControlAPI(llm.API):
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:
         return llm.APIInstance(
             api=self,
-            api_prompt=(
-                "You are a voice assistant for Home Assistant. "
-                "Answer questions about the world truthfully. Answer in plain text. Keep it simple and to the point.\n"
-                "Devices are identified by Chinese name+area. "
-                "Entity names are in Chinese (e.g., '筒灯', '空调', '窗帘', '平推窗'). "
-                "Area names are in Chinese (e.g., '办公室', '展厅', '卧室', '客厅'). "
-                "For window control, use ControlWindow. Window type keywords: "
-                "平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户."
-            ),
+            api_prompt=self._build_entity_prompt(),
             llm_context=llm_context,
             tools=self.tools,
             custom_serializer=None,
         )
+
+    @callback
+    def _build_entity_prompt(self) -> str:
+        """Build a compact entity listing prompt."""
+        from homeassistant.helpers import area_registry as ar, entity_registry as er
+
+        area_reg = ar.async_get(self.hass)
+        entity_reg = er.async_get(self.hass)
+
+        area_entities: dict[str, list[str]] = {}
+        no_area_entities: list[str] = []
+
+        for state in self.hass.states.async_all():
+            domain = state.domain
+            entry = entity_reg.async_get(state.entity_id)
+            if not entry or entry.hidden_by or entry.disabled_by:
+                continue
+
+            name = state.name
+            area_name = None
+            if entry.area_id:
+                area = area_reg.async_get_area(entry.area_id)
+                if area:
+                    area_name = area.name
+
+            line = f"{name}({domain})"
+            if area_name:
+                area_entities.setdefault(area_name, []).append(line)
+            else:
+                no_area_entities.append(line)
+
+        parts = ["You are a voice assistant for Home Assistant. Answer in plain text.\nExposed devices:"]
+        for area in sorted(area_entities):
+            parts.append(f"  [{area}]: {', '.join(area_entities[area])}")
+        if no_area_entities:
+            parts.append(f"  [其他]: {', '.join(no_area_entities)}")
+        return "\n".join(parts)
 
     @property
     def tools(self) -> list[_Tool]:
