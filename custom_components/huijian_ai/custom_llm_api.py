@@ -148,12 +148,12 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "ControlWindow",
-                "窗户控制 ● open(开) close(关) pause(暂停) tilt(内倒/内岛) "
+                "窗户控制 ● open(开) close(关) pause(暂停) tilt(内倒/内岛) 兼容A "
                 "● 窗类型: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/智能窗/窗户 "
                 "● 非窗户设备用DeviceControl",
                 self._handle_control_window,
                 vol.Schema({
-                    vol.Required("action"): vol.In(["open", "close", "pause", "tilt"]),
+                    vol.Required("action"): vol.In(["open", "close", "pause", "A", "tilt"]),
                     vol.Required("target"): _target_schema(),
                 }),
             ),
