@@ -17,6 +17,8 @@ _ACTION_TO_INTENT = {
     "set_mode": "SetDeviceMode",
 }
 
+_DOMAIN_ALIASES = "lamp→light, ac→climate, curtain→cover, window→cover/button"
+
 _WINDOW_KEYWORDS = [
     "窗", "窗户", "平推窗", "平开窗", "推拉窗",
     "内开窗", "外开窗", "天窗", "飘窗", "推拉门",
@@ -75,16 +77,31 @@ class HuijianControlAPI(llm.API):
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:
         return llm.APIInstance(
             api=self,
-            api_prompt=self._build_entity_prompt(),
+            api_prompt=self._build_entity_prompt(llm_context),
             llm_context=llm_context,
             tools=self.tools,
             custom_serializer=None,
         )
 
     @callback
-    def _build_entity_prompt(self) -> str:
-        """Build operation guide + entity listing prompt."""
-        _MAX_ENTITIES = 60
+    def _build_entity_prompt(self, llm_context: llm.LLMContext | None = None) -> str:
+        """Build operation guide (no device list — use HuijianGetLiveContext for states)."""
+        from homeassistant.components.homeassistant import async_should_expose
+
+        parts = [
+            "操作指南:",
+            "1. 先调用HuijianGetLiveContext查看设备实时状态（含所有设备名、区域、当前值）",
+            "2. 用DeviceControl控制设备: action=turn_on(开)/turn_off(关)/adjust(调)/set_mode(设模式)",
+            "3. 只有窗户相关的操作(开窗/关窗/暂停/内倒)才用ControlWindow",
+            "4. target参数必须包含devices并指定domains（如domains:['light']表示灯）",
+            "5. 实体名用中文精确匹配，区域名也用中文",
+            f"6. 领域别名: {_DOMAIN_ALIASES}",
+            "7. delta格式: +10(增加) -10(减少) 50(设值) 50%(设百分比) max/min(极限) #FF0000(色值)",
+            "8. mode可选值: heat/cool/auto/dry/fan_only(空调/气候设备)",
+        ]
+
+        # Add a compact entity reference (names only, no states — to avoid duplicating GetLiveContext)
+        assistant = llm_context.assistant if llm_context and hasattr(llm_context, "assistant") else None
         from homeassistant.helpers import area_registry as ar, entity_registry as er
 
         area_reg = ar.async_get(self.hass)
@@ -92,11 +109,13 @@ class HuijianControlAPI(llm.API):
 
         area_entities: dict[str, list[str]] = {}
         no_area_entities: list[str] = []
+        _MAX_ENTITIES = 40
 
         for state in self.hass.states.async_all():
             if len(area_entities) + len(no_area_entities) >= _MAX_ENTITIES:
                 break
-            domain = state.domain
+            if assistant and not async_should_expose(self.hass, assistant, state.entity_id):
+                continue
             entry = entity_reg.async_get(state.entity_id)
             if not entry or entry.hidden_by or entry.disabled_by:
                 continue
@@ -106,25 +125,21 @@ class HuijianControlAPI(llm.API):
                 area = area_reg.async_get_area(entry.area_id)
                 if area:
                     area_name = area.name
-            line = f"{name}({domain})"
+            aliases = entry.aliases or []
+            alias_str = f"/{'/'.join(aliases)}" if aliases else ""
+            line = f"{name}({state.domain}{alias_str})"
             if area_name:
                 area_entities.setdefault(area_name, []).append(line)
             else:
                 no_area_entities.append(line)
 
-        parts = [
-            "操作指南:",
-            "1. 先调用HuijianGetLiveContext查看设备实时状态（如果需要做判断）",
-            "2. 用DeviceControl控制设备: action=turn_on(开)/turn_off(关)/adjust(调)/set_mode(设模式)",
-            "3. 只有窗户相关的操作(开窗/关窗/暂停/内倒)才用ControlWindow",
-            "4. target参数必须包含devices并指定domains（如domains:['light']表示灯）",
-            "5. 实体名用中文精确匹配，区域名也用中文",
-            "可用设备(按区域):",
-        ]
-        for area in sorted(area_entities):
-            parts.append(f"  [{area}]: {', '.join(area_entities[area])}")
-        if no_area_entities:
-            parts.append(f"  [其他]: {', '.join(no_area_entities)}")
+        if area_entities or no_area_entities:
+            parts.append("可用设备(按区域):")
+            for area in sorted(area_entities):
+                parts.append(f"  [{area}]: {', '.join(area_entities[area])}")
+            if no_area_entities:
+                parts.append(f"  [其他]: {', '.join(no_area_entities)}")
+
         return "\n".join(parts)
 
     @property
@@ -135,7 +150,8 @@ class HuijianControlAPI(llm.API):
                 "中文设备控制(开/关/调/设模式) ● turn_on(开) turn_off(关) adjust(调) set_mode(设模式) "
                 "● 支持: lights/covers/fans/climate/locks/valves/buttons "
                 "● 属性: brightness/color/temperature/position/fan_speed/humidity "
-                "● 参数: {action, target:[{devices:[{domains,name}],area}]} "
+                "● delta格式: +10(增) -10(减) 50(设值) 50%(百分比) max/min(极限) #FF0000(色值) "
+                "● mode: heat/cool/auto/dry/fan_only(仅气候设备) "
                 "● 窗/窗户等自动转发到ControlWindow",
                 self._handle_device_control,
                 vol.Schema({
@@ -159,7 +175,7 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HuijianGetLiveContext",
-                "获取所有设备实时状态 ● 做控制决策前先调用此工具获取最新信息",
+                "获取所有设备实时状态(设备名/区域/当前值/模式) ● 做控制决策前先调用此工具获取最新信息",
                 self._call_intent_factory("huijianGetLiveContext"),
                 vol.Schema({}),
             ),
@@ -264,4 +280,7 @@ class HuijianControlAPI(llm.API):
             _LOGGER.error("Intent %s failed: %s", intent_type, e)
             return {"success": False, "error": str(e)}
 
-        return {"success": True, "result": str(response)}
+        result_text = str(response)
+        if len(result_text) > 200:
+            result_text = result_text[:200] + "..."
+        return {"success": True, "result": result_text}
