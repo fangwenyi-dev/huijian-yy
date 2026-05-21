@@ -27,7 +27,7 @@ WINDOW_ACTION_MAPPING = {
     "open": ["开启", "开", "open"],
     "close": ["关闭", "关", "close"],
     "pause": ["暂停", "停止", "pause", "stop"],
-    "a": ["A", "a", "内倒", "内岛", "内导"],
+    "a": ["A", "a", "内倒", "内岛", "内导", "tilt"],
 }
 
 REMOVE_KEYWORDS = ["删除", "remove", "shan_chu", "shanchu", "delete"]

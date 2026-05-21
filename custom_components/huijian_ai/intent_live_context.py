@@ -1,6 +1,4 @@
 import logging
-from decimal import Decimal
-from enum import Enum
 from operator import attrgetter
 from typing import Any
 
@@ -116,11 +114,7 @@ def _get_exposed_entities(
 
         if include_state and (
             attributes := {
-                attr_name: (
-                    str(attr_value)
-                    if isinstance(attr_value, (Enum, Decimal, int))
-                    else attr_value
-                )
+                attr_name: str(attr_value)
                 for attr_name, attr_value in state.attributes.items()
                 if attr_name in interesting_attributes
             }
