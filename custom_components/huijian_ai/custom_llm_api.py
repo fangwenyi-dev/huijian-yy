@@ -223,30 +223,46 @@ class HuijianControlAPI(llm.API):
         action = arguments.get("action", "")
         target = arguments.get("target", [])
 
+        window_targets: list = []
+        non_window_targets: list = []
+
         for t in target:
             devices = t.get("devices", [])
+            window_devices = []
+            non_window_devices = []
             for device in devices:
                 name = device.get("name", "")
                 if name and _has_window_keyword(name):
-                    window_action = "open" if action == "turn_on" else "close"
-                    if action not in ("turn_on", "turn_off"):
-                        window_action = action
-                    _LOGGER.info(
-                        "Window name detected=%s in DeviceControl, forwarding to ControlWindow(action=%s)",
-                        name, window_action,
-                    )
-                    return await self._call_intent(hass, "ControlWindow", {"action": window_action, "target": target}, llm_context)
+                    window_devices.append(device)
+                else:
+                    non_window_devices.append(device)
+            if window_devices:
+                window_targets.append({**t, "devices": window_devices})
+            if non_window_devices:
+                non_window_targets.append({**t, "devices": non_window_devices})
+
+        if window_targets:
+            window_action = "open" if action in ("turn_on", "turn_off") else action
+            if action == "turn_off":
+                window_action = "close"
+            _LOGGER.info(
+                "Forwarding %d window targets to ControlWindow(action=%s)", len(window_targets), window_action,
+            )
+            await self._call_intent(hass, "ControlWindow", {"action": window_action, "target": window_targets}, llm_context)
+
+        if not non_window_targets:
+            return {"success": True, "message": "All targets forwarded to ControlWindow"}
 
         intent_type = _ACTION_TO_INTENT.get(action)
         if not intent_type:
             return {"success": False, "error": f"Unknown action: {action}"}
 
-        for t in target:
+        for t in non_window_targets:
             for device in t.get("devices", []):
                 if "domains" not in device:
                     device["domains"] = []
 
-        intent_args = {"target": target}
+        intent_args = {"target": non_window_targets}
         if action == "adjust":
             if "attribute" in arguments:
                 intent_args["attribute"] = arguments["attribute"]
