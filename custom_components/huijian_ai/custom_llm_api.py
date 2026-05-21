@@ -74,7 +74,10 @@ class HuijianControlAPI(llm.API):
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:
         return llm.APIInstance(
             api=self,
-            api_prompt="",
+            api_prompt=(
+                "You are a voice assistant for Home Assistant. "
+                "Answer questions about the world truthfully. Answer in plain text. Keep it simple and to the point."
+            ),
             llm_context=llm_context,
             tools=self.tools,
             custom_serializer=None,
@@ -85,12 +88,12 @@ class HuijianControlAPI(llm.API):
         return [
             _Tool(
                 "DeviceControl",
-                "Control HA devices via turn_on/turn_off/adjust/set_mode. "
-                "Examples: '打开办公室筒灯'=turn_on(t灯), '关闭卧室灯'=turn_off(灯), "
-                "'调亮客厅灯20%'=adjust(亮度), '空调设为26度'=adjust(温度), "
-                "'空调设为制热'=set_mode(heat). "
-                "Window names(窗/窗户/平推窗等) auto-forward to ControlWindow. "
-                "NOT for ESP32 devices(self_* tools).",
+                "Turns on/off/adjusts a Home Assistant device. "
+                "Use for: lights (e.g., '打开办公室筒灯'), switches, fans, covers/curtains (e.g., '打开窗帘'), "
+                "climate, media_player, lock, valve, vacuum, alarm, button. "
+                "action=turn_on(开), turn_off(关), adjust(调), set_mode(设模式). "
+                "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
+                "NOT for ESP32 self_lamp* tools.",
                 self._handle_device_control,
                 vol.Schema({
                     vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),
@@ -102,10 +105,10 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "ControlWindow",
-                "Window-only: open(开)/close(关)/pause(暂停)/tilt(内倒). "
-                "Types: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/智能窗/窗户. "
-                "Examples: '打开展厅平推窗'=open(平推窗), '关闭卧室窗'=close(窗户). "
-                "Non-window devices use DeviceControl.",
+                "Window control only: open(开)/close(关)/pause(暂停)/tilt(内倒). "
+                "Use for: 平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户. "
+                "Examples: '打开展厅平推窗' -> action=open, area=展厅, name=平推窗. "
+                "NOTE: Non-window devices should use DeviceControl.",
                 self._handle_control_window,
                 vol.Schema({
                     vol.Required("action"): vol.In(["open", "close", "pause", "A", "tilt"]),
