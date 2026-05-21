@@ -76,7 +76,12 @@ class HuijianControlAPI(llm.API):
             api=self,
             api_prompt=(
                 "You are a voice assistant for Home Assistant. "
-                "Answer questions about the world truthfully. Answer in plain text. Keep it simple and to the point."
+                "Answer questions about the world truthfully. Answer in plain text. Keep it simple and to the point.\n"
+                "Devices are identified by Chinese name+area. "
+                "Entity names are in Chinese (e.g., '筒灯', '空调', '窗帘', '平推窗'). "
+                "Area names are in Chinese (e.g., '办公室', '展厅', '卧室', '客厅'). "
+                "For window control, use ControlWindow. Window type keywords: "
+                "平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户."
             ),
             llm_context=llm_context,
             tools=self.tools,
@@ -90,8 +95,10 @@ class HuijianControlAPI(llm.API):
                 "DeviceControl",
                 "Turns on/off/adjusts a Home Assistant device. "
                 "Use for: lights (e.g., '打开办公室筒灯'), switches, fans, covers/curtains (e.g., '打开窗帘'), "
-                "climate(空调/暖气), media_player, lock, valve, vacuum, alarm, button. "
+                "climate(空调/暖气), lock, valve, vacuum, alarm, button. "
                 "action=turn_on(开), turn_off(关), adjust(调), set_mode(设模式). "
+                "adjust supports: brightness(灯), color(灯), temperature(灯/空调), "
+                "position(窗帘), fan_speed(风扇/空调), humidity(加湿器). "
                 "IMPORTANT: Always include domains in target devices. "
                 "Example: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '办公室'}]. "
                 "NOTE: Window commands (开窗/关窗) auto-forward to ControlWindow. "

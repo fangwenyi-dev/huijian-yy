@@ -165,7 +165,9 @@ class HuijianGetLiveContextIntent(intent.IntentHandler):
     @property
     def slot_schema(self) -> dict | None:
         """Return a slot schema."""
-        return None
+        return {
+            vol.Optional("_speaker_id"): str,
+        }
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:  # type: ignore
         """Get the current state of exposed entities."""
