@@ -82,7 +82,8 @@ class HuijianControlAPI(llm.API):
 
     @callback
     def _build_entity_prompt(self) -> str:
-        """Build a compact entity listing prompt."""
+        """Build operation guide + entity listing prompt."""
+        _MAX_ENTITIES = 60
         from homeassistant.helpers import area_registry as ar, entity_registry as er
 
         area_reg = ar.async_get(self.hass)
@@ -90,27 +91,37 @@ class HuijianControlAPI(llm.API):
 
         area_entities: dict[str, list[str]] = {}
         no_area_entities: list[str] = []
+        count = 0
 
         for state in self.hass.states.async_all():
+            if count >= _MAX_ENTITIES:
+                break
             domain = state.domain
             entry = entity_reg.async_get(state.entity_id)
             if not entry or entry.hidden_by or entry.disabled_by:
                 continue
-
+            count += 1
             name = state.name
             area_name = None
             if entry.area_id:
                 area = area_reg.async_get_area(entry.area_id)
                 if area:
                     area_name = area.name
-
             line = f"{name}({domain})"
             if area_name:
                 area_entities.setdefault(area_name, []).append(line)
             else:
                 no_area_entities.append(line)
 
-        parts = ["You are a voice assistant for Home Assistant. Answer in plain text.\nExposed devices:"]
+        parts = [
+            "操作指南:",
+            "1. 先调用HuijianGetLiveContext查看设备实时状态（如果需要做判断）",
+            "2. 用DeviceControl控制设备: action=turn_on(开)/turn_off(关)/adjust(调)/set_mode(设模式)",
+            "3. 只有窗户相关的操作(开窗/关窗/暂停/内倒)才用ControlWindow",
+            "4. target参数必须包含devices并指定domains（如domains:['light']表示灯）",
+            "5. 实体名用中文精确匹配，区域名也用中文",
+            "可用设备(按区域):",
+        ]
         for area in sorted(area_entities):
             parts.append(f"  [{area}]: {', '.join(area_entities[area])}")
         if no_area_entities:
@@ -122,40 +133,34 @@ class HuijianControlAPI(llm.API):
         return [
             _Tool(
                 "DeviceControl",
-                "Turns on/off/adjusts a Home Assistant device. "
-                "Use for: lights (e.g., '打开办公室筒灯'), switches, fans, covers/curtains (e.g., '打开窗帘'), "
-                "climate(空调/暖气), lock, valve, vacuum, alarm, button. "
-                "action=turn_on(开), turn_off(关), adjust(调), set_mode(设模式). "
-                "adjust supports: brightness(灯), color(灯), temperature(灯/空调), "
-                "position(窗帘), fan_speed(风扇/空调), humidity(加湿器). "
-                "IMPORTANT: Always include domains in target devices. "
-                "Example: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '办公室'}]. "
-                "NOTE: Window commands (开窗/关窗) auto-forward to ControlWindow. "
-                "NOT for ESP32 self_lamp* tools.",
+                "中文设备控制(开/关/调/设模式) ● turn_on(开) turn_off(关) adjust(调) set_mode(设模式) "
+                "● 支持: lights/covers/fans/climate/locks/valves/buttons "
+                "● 属性: brightness/color/temperature/position/fan_speed/humidity "
+                "● 参数: {action, target:[{devices:[{domains,name}],area}]} "
+                "● 窗/窗户等自动转发到ControlWindow",
                 self._handle_device_control,
                 vol.Schema({
                     vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),
                     vol.Optional("target"): _target_schema(),
-                    vol.Optional("attribute"): vol.In(["brightness", "temperature", "position", "volume", "fan_speed", "humidity", "color"]),
+                    vol.Optional("attribute"): vol.In(["brightness", "color", "temperature", "position", "fan_speed", "humidity"]),
                     vol.Optional("delta"): cv.string,
                     vol.Optional("mode"): cv.string,
                 }),
             ),
             _Tool(
                 "ControlWindow",
-                "Window control only: open(开)/close(关)/pause(暂停)/tilt(内倒). "
-                "Use for: 平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户. "
-                "Examples: '打开展厅平推窗' -> action=open, area=展厅, name=平推窗. "
-                "NOTE: Non-window devices should use DeviceControl.",
+                "窗户控制 ● open(开) close(关) pause(暂停) tilt(内倒) "
+                "● 窗类型: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/智能窗/窗户 "
+                "● 非窗户设备用DeviceControl",
                 self._handle_control_window,
                 vol.Schema({
-                    vol.Required("action"): vol.In(["open", "close", "pause", "A", "tilt"]),
+                    vol.Required("action"): vol.In(["open", "close", "pause", "tilt"]),
                     vol.Required("target"): _target_schema(),
                 }),
             ),
             _Tool(
                 "HuijianGetLiveContext",
-                "Get state/value/mode of ALL devices and sensors. Call BEFORE making control decisions.",
+                "获取所有设备实时状态 ● 做控制决策前先调用此工具获取最新信息",
                 self._call_intent_factory("huijianGetLiveContext"),
                 vol.Schema({}),
             ),
@@ -243,6 +248,8 @@ class HuijianControlAPI(llm.API):
 
     async def _call_intent(self, hass: HomeAssistant, intent_type: str, arguments: dict, llm_context: llm.LLMContext) -> dict:
         slots = _build_slots(arguments)
+        if llm_context and llm_context.device_id:
+            slots["_speaker_id"] = {"value": llm_context.device_id}
         assistant = llm_context.assistant if llm_context and hasattr(llm_context, "assistant") else None
 
         try:
