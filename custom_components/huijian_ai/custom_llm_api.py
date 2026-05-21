@@ -85,11 +85,11 @@ class HuijianControlAPI(llm.API):
 
     @callback
     def _build_entity_prompt(self, llm_context: llm.LLMContext | None = None) -> str:
-        """Build operation guide (no device list — use HuijianGetLiveContext for states)."""
+        """Build operation guide + compact device name reference."""
         from .intent_live_context import async_should_expose
 
         parts = [
-            "操作指南:",
+            "操作指南(含部分设备名参考—完整状态用HuijianGetLiveContext获取):",
             "1. 先调用HuijianGetLiveContext查看设备实时状态（含所有设备名、区域、当前值）",
             "2. 用DeviceControl控制设备: action=turn_on(开)/turn_off(关)/adjust(调)/set_mode(设模式)",
             "3. 只有窗户相关的操作(开窗/关窗/暂停/内倒)才用ControlWindow",
@@ -153,8 +153,11 @@ class HuijianControlAPI(llm.API):
                 "DeviceControl",
                 "HA灯/开关/空调/窗帘/风扇/锁/阀门等全部HA设备的开/关/调/设模式。 "
                 "turn_on(开) turn_off(关) adjust(调) set_mode(设模式) "
-                "delta: +10增 -10减 50设值 50%百分比 max/min极限. mode: heat/cool/auto/dry/fan_only. "
-                "窗自动转发ControlWindow. ESP32板载灯(小灯)用self_lamp.",
+                "规则: adjust需配合attribute+delta set_mode需配合mode turn_on/turn_off只需target. "
+                "delta: +10增 -10减 50设值 50%百分比 max/min极限 #FF0000色值. "
+                "mode: heat/cool/auto/dry/fan_only. "
+                "示例: action=turn_on target=[{devices:[{domains:['light'],name:'筒灯'}],area:'办公室'}]. "
+                "窗自动转发ControlWindow. ESP32板载灯用self_lamp.",
                 self._handle_device_control,
                 vol.Schema({
                     vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),

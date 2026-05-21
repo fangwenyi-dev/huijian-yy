@@ -95,7 +95,7 @@ class McpTransport(WsTransport):
                 context=None,
                 language="*",
                 assistant=conversation.DOMAIN,
-                device_id=self.entry.entry_id,
+                device_id=self.entry.data.get("speak_id", self.entry.entry_id),
             )
             self._mcp_server = await self._create_server(context)
             self._mcp_server.version = "2.2.0"
