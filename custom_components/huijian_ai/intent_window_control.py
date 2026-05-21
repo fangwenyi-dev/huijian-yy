@@ -6,10 +6,11 @@ from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN
 from homeassistant.components.button.const import \
     SERVICE_PRESS as SERVICE_PRESS_BUTTON
 from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
-from .intent_helper import HaTargetItem, target_parameter_type
+from .intent_helper import HaTargetItem
 from .intent_window_const import (WINDOW_ACTION_MAPPING, WINDOW_NAME_MAPPING,
                                   extract_window_name, find_action_in_text,
                                   find_all_window_buttons_by_action,
@@ -54,7 +55,29 @@ class ControlWindowIntent(intent.IntentHandler):
         """Return a slot schema."""
         return {
             vol.Optional("action"): str,
-            vol.Required("target"): target_parameter_type(),
+            vol.Required("target"): vol.All(
+                cv.ensure_list,
+                [
+                    vol.Schema(
+                        {
+                            vol.Optional("devices"): vol.All(
+                                cv.ensure_list,
+                                [
+                                    vol.Schema(
+                                        {
+                                            vol.Optional("domains"): vol.All(
+                                                cv.ensure_list, [cv.string]
+                                            ),
+                                            vol.Optional("name"): cv.string,
+                                        }
+                                    )
+                                ],
+                            ),
+                            vol.Optional("area"): cv.string,
+                        }
+                    )
+                ],
+            ),
         }
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
