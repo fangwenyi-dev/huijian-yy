@@ -173,43 +173,44 @@ class HuijianGetLiveContextIntent(intent.IntentHandler):
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:  # type: ignore
         """Get the current state of exposed entities."""
-        slots = self.async_validate_slots(intent_obj.slots)
-        _LOGGER.info("huijianGetLiveContext: slots=%s", slots)
+        try:
+            slots = self.async_validate_slots(intent_obj.slots)
+            _LOGGER.info("huijianGetLiveContext: slots=%s", slots)
 
-        speaker_id: str = slots.get("_speaker_id", {}).get("value")
+            speaker_id: str = slots.get("_speaker_id", {}).get("value")
 
-        hass = intent_obj.hass
+            hass = intent_obj.hass
 
-        if intent_obj.assistant is None:
-            # Note this doesn't happen in practice since this tool won't be
-            # exposed if no assistant is configured.
-            return {"success": False, "error": "No assistant configured"}
+            if intent_obj.assistant is None:
+                return {"success": False, "error": "No assistant configured"}
 
-        speaker_info: dict | None = None
-        if speaker_id:
-            # Query the speaker's area by its ID.
-            speaker_area = find_speaker_area(hass, speaker_id)
-            if speaker_area:
-                speaker_info = {
-                    "area_id": speaker_area.id,
-                    "floor_id": speaker_area.floor_id,
-                    "area_name": speaker_area.name,
+            speaker_info: dict | None = None
+            if speaker_id:
+                speaker_area = find_speaker_area(hass, speaker_id)
+                if speaker_area:
+                    speaker_info = {
+                        "area_id": speaker_area.id,
+                        "floor_id": speaker_area.floor_id,
+                        "area_name": speaker_area.name,
+                    }
+                    _LOGGER.info("huijianGetLiveContext: speaker_info=%s", speaker_info)
+
+            exposed_entities = _get_exposed_entities(hass, intent_obj.assistant)
+            if not exposed_entities["entities"]:
+                return {
+                    "success": False,
+                    "error": "No devices available for operation. Please expose them in the Home Assistant voice assistant.",
                 }
-                _LOGGER.info("huijianGetLiveContext: speaker_info=%s", speaker_info)
 
-        exposed_entities = _get_exposed_entities(hass, intent_obj.assistant)
-        if not exposed_entities["entities"]:
+            prompt = [
+                "Live Context: An overview of the areas and the devices in this smart home:",
+                yaml_util.dump(list(exposed_entities["entities"].values())),
+            ]
             return {
-                "success": False,
-                "error": "No devices available for operation. Please expose them in the Home Assistant voice assistant.",
+                "success": True,
+                "speaker": speaker_info,
+                "result": "\n".join(prompt),
             }
-
-        prompt = [
-            "Live Context: An overview of the areas and the devices in this smart home:",
-            yaml_util.dump(list(exposed_entities["entities"].values())),
-        ]
-        return {
-            "success": True,
-            "speaker": speaker_info,
-            "result": "\n".join(prompt),
-        }
+        except Exception as e:
+            _LOGGER.error("huijianGetLiveContext failed: %s", e, exc_info=True)
+            return {"success": False, "error": str(e)}
