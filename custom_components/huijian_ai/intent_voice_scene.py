@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import voluptuous as vol
@@ -89,7 +89,7 @@ class VoiceSceneStore:
                 "scene_id": scene_id,
                 "trigger_phrase": trigger_phrase,
                 "actions": actions,
-                "created_at": datetime.now().isoformat() + "Z",
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             data["scenes"][scene_id] = scene
@@ -177,6 +177,12 @@ def get_voice_scene_store(hass: HomeAssistant) -> VoiceSceneStore:
     if _store_instance is None:
         _store_instance = VoiceSceneStore(hass)
     return _store_instance
+
+
+def reset_voice_scene_globals():
+    """Reset global singleton reference for clean reload."""
+    global _store_instance
+    _store_instance = None
 
 
 class HassCreateVoiceSceneIntent(intent.IntentHandler):

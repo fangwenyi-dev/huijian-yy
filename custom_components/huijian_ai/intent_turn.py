@@ -404,10 +404,8 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         try:
             done, pending = await asyncio.wait({task}, timeout=self.service_timeout)
             if pending:
-                _LOGGER.error("Service call is timeout: %s", task.get_name())
+                _LOGGER.error("Service call timed out: %s", task.get_name())
         except asyncio.CancelledError:
-            # Task calling us was cancelled, so cancel service call task, and wait for
-            # it to be cancelled, within reason, before leaving.
             _LOGGER.debug("Service call was cancelled: %s", task.get_name())
             task.cancel()
             await asyncio.wait({task}, timeout=5)
@@ -434,9 +432,13 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         ):
             return True
         if name:
+            from .intent_device_shared import WINDOW_EXCLUDE_KEYWORDS
             from .intent_window_const import WINDOW_NAME_MAPPING
 
             name_lower = name.lower().strip()
+            for ex in WINDOW_EXCLUDE_KEYWORDS:
+                if ex.lower() in name_lower:
+                    return False
             for key, value in WINDOW_NAME_MAPPING.items():
                 if key.lower() in name_lower or value.lower() in name_lower:
                     return True

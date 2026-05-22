@@ -37,59 +37,54 @@ def normalize_text(text: str) -> str:
     return text.lower().strip() if text else ""
 
 
+_CN_DIGITS = {
+    "零": 0, "一": 1, "二": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+_CN_UNITS = {"十": 10, "百": 100, "千": 1000}
+_CN_NUM_PATTERN = None
+
+
+def _parse_chinese_number(s: str) -> str:
+    """Parse a Chinese number string to Arabic numeral string.
+
+    Handles: 五→5, 二十三→23, 一百二十→120, 二百三十→230, 十一→11, 十→10
+    """
+    if not s:
+        return ""
+    result = 0
+    current = 0
+    for ch in s:
+        if ch in _CN_DIGITS:
+            current = _CN_DIGITS[ch]
+        elif ch in _CN_UNITS:
+            unit = _CN_UNITS[ch]
+            if current == 0:
+                current = 1
+            result += current * unit
+            current = 0
+    result += current
+    return str(result)
+
+
 def normalize_chinese_numbers(text: str) -> str:
-    """将中文数字转换为阿拉伯数字。
+    """Convert Chinese numerals in text to Arabic numerals.
 
     Examples:
         '五号测试窗' -> '5号测试窗'
         '二号窗户' -> '2号窗户'
         '十号' -> '10号'
         '二十三号' -> '23号'
-        '一百二十三号' -> '123号'
+        '一百二十号' -> '120号'
+        '二百三十号' -> '230号'
     """
     if not text:
         return text
-
-    chinese_digits = {
-        "零": "0", "一": "1", "二": "2", "三": "3", "四": "4",
-        "五": "5", "六": "6", "七": "7", "八": "8", "九": "9",
-        "十": "10",
-    }
-
-    result = text
-    # 处理两位数及以上的中文数字（十一 ~ 九十九）
-    import re
-    # 匹配 二十三, 十五, 十 等模式
-    def replace_teen_and_above(m):
-        s = m.group(0)
-        # 去掉"十"字，如果只有"十"则表示10
-        s = s.replace("十", "")
-        # 逐字转换
-        digits = []
-        for ch in s:
-            if ch in chinese_digits:
-                d = chinese_digits[ch]
-                if d != "0":  # 跳过"零"
-                    digits.append(d)
-        if not digits:
-            return "0"
-        # 如果只有一位数字（说明原词是"十"开头），则前面补0（但十=10）
-        # 如果原词有"十"且后面还有内容，如"二十三"，则直接拼接
-        # 特殊情况："十"单独出现=10
-        return "".join(digits)
-
-    # 匹配 [一二三四五六七八九]十[一二三四五六七八九]? 或 十[一二三四五六七八九]? 等模式
-    result = re.sub(r"[一二三四五六七八九]十[一二三四五六七八九]?", replace_teen_and_above, text)
-    # 匹配 十[一二三四五六七八九]?（如"十"或"十一"）
-    result = re.sub(r"十([一二三四五六七八九]?)", lambda m: "10" if not m.group(1) else chinese_digits.get(m.group(1), m.group(0)), result)
-    # 匹配 一百二十三 这样的模式
-    result = re.sub(r"[一二三四五六七八九]百([一二三四五六七八九]?十?[一二三四五六七八九]?)", replace_teen_and_above, result)
-
-    # 处理单个数字：一, 二, 三, 四, 五, 六, 七, 八, 九
-    for ch, digit in chinese_digits.items():
-        result = result.replace(ch, digit)
-
-    return result
+    global _CN_NUM_PATTERN
+    if _CN_NUM_PATTERN is None:
+        import re
+        _CN_NUM_PATTERN = re.compile(r"[零一二三四五六七八九十百千]+")
+    return _CN_NUM_PATTERN.sub(lambda m: _parse_chinese_number(m.group(0)), text)
 
 
 def extract_window_name(name: str) -> str | None:

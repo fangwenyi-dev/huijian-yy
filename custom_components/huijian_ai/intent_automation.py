@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import voluptuous as vol
@@ -249,7 +249,7 @@ class AutomationStore:
                 "automation_id": automation_id,
                 "trigger": trigger,
                 "actions": actions,
-                "created_at": datetime.now().isoformat() + "Z",
+                "created_at": datetime.now(timezone.utc).isoformat(),
                 "last_triggered": None,
             }
 
@@ -271,7 +271,7 @@ class AutomationStore:
                 automation["trigger"] = trigger
             if actions is not None:
                 automation["actions"] = actions
-            automation["updated_at"] = datetime.now().isoformat() + "Z"
+            automation["updated_at"] = datetime.now(timezone.utc).isoformat()
 
             await self._save_data(data)
             _LOGGER.info("Updated automation: %s", automation_id)
@@ -551,6 +551,13 @@ def get_automation_manager(hass: HomeAssistant) -> AutomationManager:
     if _manager_instance is None:
         _manager_instance = AutomationManager(hass)
     return _manager_instance
+
+
+def reset_automation_globals():
+    """Reset global singleton references for clean reload."""
+    global _store_instance, _manager_instance
+    _store_instance = None
+    _manager_instance = None
 
 
 class HassCreateAutomationIntent(ha_intent.IntentHandler):

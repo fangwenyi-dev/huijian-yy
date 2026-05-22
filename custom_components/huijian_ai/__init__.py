@@ -23,7 +23,8 @@ from .entry_data import ESPHomeConfigEntry, RuntimeEntryData
 from .huijian import LOGGER, Dict, get_entry_data, mcp_transport
 from .huijian.http import async_setup_https
 from .intent import async_setup_intents
-from .intent_automation import get_automation_manager
+from .intent_automation import get_automation_manager, reset_automation_globals
+from .intent_voice_scene import reset_voice_scene_globals
 from .manager import (DEVICE_CONFLICT_ISSUE_FORMAT, ESPHomeManager,
                       cleanup_instance)
 from .websocket_api import async_setup as async_setup_websocket_api
@@ -122,6 +123,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ESPHomeConfigEntry) -> 
     )
     if unload_ok:
         await cleanup_instance(entry)
+        reset_automation_globals()
+        reset_voice_scene_globals()
     return unload_ok
 
 
