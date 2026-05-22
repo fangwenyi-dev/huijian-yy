@@ -39,6 +39,36 @@ DOMAIN_ALIASES: dict[str, str | list[str]] = {
 }
 
 
+def normalize_targets_device_names(targets: list[dict]) -> list[dict]:
+    """归一化 targets 中所有设备名称里的中文数字。
+
+    Converts Chinese numerals (一二三...十) in device names to Arabic numerals.
+    Improves entity matching when ASR recognizes "五号" but HA entity is "5号".
+
+    Args:
+        targets: List of target dicts with 'devices' containing 'name' fields.
+
+    Returns:
+        New list of targets with normalized device names.
+    """
+    from .intent_window_const import normalize_chinese_numbers
+
+    result = []
+    for target in targets:
+        target = dict(target)
+        devices = target.get("devices", [])
+        if devices:
+            new_devices = []
+            for d in devices:
+                d = dict(d)
+                if d.get("name"):
+                    d["name"] = normalize_chinese_numbers(d["name"])
+                new_devices.append(d)
+            target["devices"] = new_devices
+        result.append(target)
+    return result
+
+
 def _expand_domains(domains: list[str]) -> list[str]:
     expanded = list(domains)
     for d in domains:
@@ -114,14 +144,18 @@ def get_entity_area(
     ):
         area_names.extend(area.aliases)
         area_names.append(area.name)
-        return AreaInfo(id=entity_entry.area_id, name=area.name)
+        if len(area_names) == 0:
+            return
+        return AreaInfo(id=entity_entry.area_id, name=area_names[0])
     elif entity_entry.device_id and (
         device := device_registry.async_get(entity_entry.device_id)
     ):
         if device.area_id and (area := area_registry.async_get_area(device.area_id)):
             area_names.extend(area.aliases)
             area_names.append(area.name)
-            return AreaInfo(id=device.area_id, name=area.name)
+            if len(area_names) == 0:
+                return
+            return AreaInfo(id=device.area_id, name=area_names[0])
 
 
 @dataclass

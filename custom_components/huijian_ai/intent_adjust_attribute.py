@@ -18,7 +18,7 @@ from homeassistant.util.color import RGBColor
 from homeassistant.util.json import JsonObjectType, JsonValueType
 
 from .intent_helper import (EntityInfo, HaTargetItem, match_intent_entities,
-                            target_parameter_type)
+                            normalize_targets_device_names, target_parameter_type)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -143,11 +143,11 @@ class Delta:
             elif self.special == "max":
                 target_value = max_value
             elif self.special == "low":
-                target_value = min_value + (max_value - min_value) * 0.25
+                target_value = min_value
             elif self.special == "medium":
-                target_value = min_value + (max_value - min_value) * 0.5
+                raise intent.IntentHandleError("unsupported")
             elif self.special == "high":
-                target_value = min_value + (max_value - min_value) * 0.75
+                target_value = max_value
             else:
                 raise intent.IntentHandleError("unsupported")
             return int(max(min_value, min(max_value, target_value)))
@@ -595,10 +595,13 @@ def adjust_media_player_brightness(ctx: AdjustmentContext, target: AdjustmentTar
 class AdjustDeviceAttributeIntent(intent.IntentHandler):
     intent_type = "AdjustDeviceAttribute"
     description = (
-        "Set or adjust a device attribute. "
-        "Supported: brightness/color/temperature(light/climate), position(cover), "
-        "fan_speed(fan/climate), humidity(humidifier), volume(media_player). "
-        "Delta: +int=increase, -int=decrease, N%/N=set absolute, max/min/low/high."
+        "Set or adjust a device attribute value. "
+        "Supported attributes: brightness(light), color(light), temperature(light/climate), "
+        "position(cover), fan_speed(fan/climate), humidity(humidifier), volume(media_player). "
+        "Delta format: '+10'/'上调10'=increase, '-5'/'下调5'=decrease, "
+        "'50%'/'50度'=set absolute, 'max'/'min'/'low'/'high'=special values. "
+        "Examples: '把卧室灯调亮20%' -> attribute=brightness, delta=+20, target=卧室灯. "
+        "'把空调温度调到26度' -> attribute=temperature, delta=26, target=空调."
     )
     platforms = {
         Platform.LIGHT,
@@ -626,6 +629,8 @@ class AdjustDeviceAttributeIntent(intent.IntentHandler):
         attribute: str = slots.get("attribute", {}).get("value")
         delta_raw: str = slots.get("delta", {}).get("value")
         targets: list[HaTargetItem] = slots.get("target", {}).get("value", [])
+        # 归一化中文数字（如"五号"->"5号"），提高实体匹配成功率
+        targets = normalize_targets_device_names(targets)
 
         delta = parse_delta(delta_raw)
         if not delta:

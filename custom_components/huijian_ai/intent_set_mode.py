@@ -12,7 +12,7 @@ from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
 from .intent_helper import (HaTargetItem, match_intent_entities,
-                            target_parameter_type)
+                            normalize_targets_device_names, target_parameter_type)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,7 +98,10 @@ def set_humidifier_mode(ctx: OperationContext, target: OperationTarget):
 class SetDeviceModeIntent(intent.IntentHandler):
     intent_type = "SetDeviceMode"
     description = (
-        "Set device mode: climate(heat/cool/auto/dry/fan_only), humidifier."
+        "Set the operation mode of a device. "
+        "Supported devices: climate(heat/cool/auto/dry/fan_only), humidifier. "
+        "Examples: '把空调设为制热模式' -> mode=heat, target=空调. "
+        "'把空调设为26度制冷' -> use AdjustDeviceAttribute with attribute=temperature instead."
     )
     platforms = {Platform.CLIMATE, Platform.HUMIDIFIER}
 
@@ -117,6 +120,8 @@ class SetDeviceModeIntent(intent.IntentHandler):
 
         mode: str = slots.get("mode", {}).get("value")
         targets: list[HaTargetItem] = slots.get("target", {}).get("value", [])
+        # 归一化中文数字（如"五号"->"5号"），提高实体匹配成功率
+        targets = normalize_targets_device_names(targets)
 
         error_msg, candidate_entities = await match_intent_entities(intent_obj, targets)
         if error_msg:

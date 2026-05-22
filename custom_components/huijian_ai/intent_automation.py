@@ -556,11 +556,17 @@ def get_automation_manager(hass: HomeAssistant) -> AutomationManager:
 class HassCreateAutomationIntent(ha_intent.IntentHandler):
     intent_type = "HassCreateAutomation"
     description = (
-        "Create sensor-triggered automation: monitor sensor + execute actions when value crosses threshold. "
-        "Use for: '当温度大于30度就打开窗户'. "
-        "NOT for voice-triggered scenes (use HassCreateVoiceScene). "
-        "Params: trigger(entity_id, above/below), actions[]. "
-        "Example: trigger={entity_id:'sensor.office_temperature', above:29}."
+        "Creates a sensor-triggered automation that monitors a sensor and executes actions "
+        "when its value crosses a threshold. "
+        "Use when user says things like '当温度大于30度就打开窗户', "
+        "'如果传感器检测到xxx就执行yyy', '灯检测到温度大于29度就开窗'. "
+        "DO NOT use for voice-triggered scenes (use HassCreateVoiceScene for that). "
+        "Parameters: "
+        "trigger (object with entity_id of sensor, and optionally above/below thresholds), "
+        "actions (array of intent action objects, same format as voice scene actions). "
+        "Examples: "
+        "trigger={entity_id:'sensor.office_temperature', above:29}, "
+        "actions=[{name:'ControlWindow', parameters:{action:'open', target:[{area:'卧室', devices:[{name:'平推窗'}]}]}}]"
     )
 
     @property
@@ -637,7 +643,9 @@ class HassCreateAutomationIntent(ha_intent.IntentHandler):
 class HassDeleteAutomationIntent(ha_intent.IntentHandler):
     intent_type = "HassDeleteAutomation"
     description = (
-        "Delete a sensor-triggered automation by automation_id."
+        "Deletes an existing sensor-triggered automation by automation_id. "
+        "Use when user says '删除自动化' or '取消自动化'. "
+        "Parameters: automation_id (string)."
     )
 
     @property
@@ -671,7 +679,9 @@ class HassDeleteAutomationIntent(ha_intent.IntentHandler):
 class HassListAutomationsIntent(ha_intent.IntentHandler):
     intent_type = "HassListAutomations"
     description = (
-        "List all sensor-triggered automations."
+        "Lists all stored sensor-triggered automations. "
+        "Use when user says '查看自动化' or '有哪些自动化'. "
+        "No parameters required."
     )
 
     @property
@@ -693,8 +703,13 @@ class HassListAutomationsIntent(ha_intent.IntentHandler):
 class HassUpdateAutomationIntent(ha_intent.IntentHandler):
     intent_type = "HassUpdateAutomation"
     description = (
-        "Update an existing sensor-triggered automation's trigger or actions. "
-        "Params: automation_id(required), trigger(entity_id/above/below), actions[]."
+        "Updates an existing sensor-triggered automation's trigger or actions. "
+        "Use when user wants to modify a previously created automation. "
+        "Parameters: automation_id (string required), "
+        "trigger (optional object with entity_id, above/below), "
+        "actions (optional array of intent action objects). "
+        "Example: automation_id='automation_20260508185741', "
+        "trigger={entity_id:'sensor.office_temperature', above:30}"
     )
 
     @property

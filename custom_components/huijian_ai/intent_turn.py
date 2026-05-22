@@ -23,6 +23,7 @@ from homeassistant.util.json import JsonObjectType
 
 from .intent_helper import (EntityInfo, HaDeviceItem, HaTargetItem,
                             match_intent_entities, target_parameter_type)
+from .intent_window_const import normalize_chinese_numbers
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -433,10 +434,8 @@ class TurnDeviceIntentBase(intent.IntentHandler):
         ):
             return True
         if name:
-            from .intent_window_const import WINDOW_NAME_MAPPING, _is_excluded
+            from .intent_window_const import WINDOW_NAME_MAPPING
 
-            if _is_excluded(name):
-                return False
             name_lower = name.lower().strip()
             for key, value in WINDOW_NAME_MAPPING.items():
                 if key.lower() in name_lower or value.lower() in name_lower:
@@ -641,8 +640,11 @@ class TurnDeviceIntentBase(intent.IntentHandler):
 class TurnDeviceOnIntent(TurnDeviceIntentBase):
     intent_type = "TurnDeviceOn"
     description = (
-        "Turn on/open/press a device: light/cover/climate/lock/valve/vacuum/alarm/button. "
-        "Window cmds (开窗/关窗) auto-forward to ControlWindow."
+        "Turns on/opens/presses a device. "
+        "Use for: lights (e.g., '打开卧室筒灯'), buttons (e.g., '按场景按钮'), "
+        "covers/curtains (e.g., '打开窗帘'), climate/lock/valve/vacuum/alarm. "
+        "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
+        "Target format: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
     )
     service_timeout = 10
 
@@ -657,14 +659,39 @@ class TurnDeviceOnIntent(TurnDeviceIntentBase):
         """Get the current state of exposed entities."""
         slots = self.async_validate_slots(intent_obj.slots)
         _LOGGER.info("TurnDeviceOn slots=%s", slots)
+        # 归一化中文数字（如"五号"->"5号"），提高实体匹配成功率
+        slots = self._normalize_slots_device_names(slots)
         return await super()._async_handle(intent_obj, slots, "turn_on")
+
+    @staticmethod
+    def _normalize_slots_device_names(slots: dict) -> dict:
+        """递归归一化 slots 中所有设备名称里的中文数字。"""
+        slots = dict(slots)
+        targets = slots.get("target", {}).get("value", [])
+        if targets:
+            slots["target"] = {"value": list(targets)}
+            for ti, target in enumerate(targets):
+                target = dict(target)
+                slots["target"]["value"][ti] = target
+                devices = target.get("devices", [])
+                if devices:
+                    target["devices"] = list(devices)
+                    for di, device in enumerate(devices):
+                        device = dict(device)
+                        target["devices"][di] = device
+                        if device.get("name"):
+                            device["name"] = normalize_chinese_numbers(device["name"])
+        return slots
 
 
 class TurnDeviceOffIntent(TurnDeviceIntentBase):
     intent_type = "TurnDeviceOff"
     description = (
-        "Turn off/close a device: light/cover/climate/lock/valve/vacuum/alarm. "
-        "Window cmds (开窗/关窗) auto-forward to ControlWindow."
+        "Turns off/closes a device. "
+        "Use for: lights (e.g., '关闭卧室筒灯'), covers/curtains (e.g., '关闭窗帘'), "
+        "climate/lock/valve/vacuum/alarm. "
+        "NOTE: Window commands (开窗/关窗) are automatically forwarded to ControlWindow. "
+        "Target format: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '卧室'}]."
     )
     service_timeout = 10
 
@@ -679,4 +706,5 @@ class TurnDeviceOffIntent(TurnDeviceIntentBase):
         """Get the current state of exposed entities."""
         slots = self.async_validate_slots(intent_obj.slots)
         _LOGGER.info("TurnDeviceOff slots=%s", slots)
+        slots = TurnDeviceOnIntent._normalize_slots_device_names(slots)
         return await super()._async_handle(intent_obj, slots, "turn_off")

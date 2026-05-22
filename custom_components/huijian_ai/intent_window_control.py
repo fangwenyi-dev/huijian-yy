@@ -6,15 +6,14 @@ from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN
 from homeassistant.components.button.const import \
     SERVICE_PRESS as SERVICE_PRESS_BUTTON
 from homeassistant.const import ATTR_ENTITY_ID
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import intent
 from homeassistant.util.json import JsonObjectType
 
-from .intent_helper import HaTargetItem
+from .intent_helper import HaTargetItem, target_parameter_type
 from .intent_window_const import (WINDOW_ACTION_MAPPING, WINDOW_NAME_MAPPING,
                                   extract_window_name, find_action_in_text,
                                   find_all_window_buttons_by_action,
-                                  find_window_buttons)
+                                  find_window_buttons, normalize_chinese_numbers)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,8 +45,11 @@ async def _press_multi_buttons(
 class ControlWindowIntent(intent.IntentHandler):
     intent_type = "ControlWindow"
     description = (
-        "Window commands: open(开)/close(关)/pause(暂停)/tilt(内倒). "
-        "Window types: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/推拉门/内开内倒窗/单内倒窗/外装平开窗/智能窗/窗户."
+        "Unified entry for ALL window commands (open/close/pause/tilt). "
+        "Action keywords: 开/开启=open, 关/关闭=close, 暂停/停止/停=pause, 内倒/内岛=A(tilt). "
+        "Examples: '内岛展厅窗户' -> action=A, area=展厅, name=窗户. "
+        "'打开平推窗' -> action=open, name=平推窗. "
+        "Valid window names: 平推窗,平开窗,推拉窗,内开窗,外开窗,天窗,飘窗,推拉门,内开内倒窗,单内倒窗,外装平开窗,智能窗,窗户."
     )
 
     @property
@@ -55,29 +57,7 @@ class ControlWindowIntent(intent.IntentHandler):
         """Return a slot schema."""
         return {
             vol.Optional("action"): str,
-            vol.Required("target"): vol.All(
-                cv.ensure_list,
-                [
-                    vol.Schema(
-                        {
-                            vol.Optional("devices"): vol.All(
-                                cv.ensure_list,
-                                [
-                                    vol.Schema(
-                                        {
-                                            vol.Optional("domains"): vol.All(
-                                                cv.ensure_list, [cv.string]
-                                            ),
-                                            vol.Optional("name"): cv.string,
-                                        }
-                                    )
-                                ],
-                            ),
-                            vol.Optional("area"): cv.string,
-                        }
-                    )
-                ],
-            ),
+            vol.Required("target"): target_parameter_type(),
         }
 
     async def async_handle(self, intent_obj: intent.Intent) -> JsonObjectType:
@@ -104,6 +84,11 @@ class ControlWindowIntent(intent.IntentHandler):
             "Input: device_name='%s', domains=%s, area_name='%s', action_slot='%s'",
             device_name, domains, area_name, action_slot,
         )
+
+        # 归一化中文数字（如"五号"->"5号"），提高与HA实体名称的匹配成功率
+        if device_name:
+            device_name = normalize_chinese_numbers(device_name)
+            _LOGGER.info("After number normalization: device_name='%s'", device_name)
 
         window_name = extract_window_name(device_name or "")
         action = find_action_in_text(device_name or "")

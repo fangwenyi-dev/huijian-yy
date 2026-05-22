@@ -11,14 +11,12 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, Platform
 from homeassistant.const import __version__ as ha_version
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import llm
 from homeassistant.helpers.issue_registry import async_delete_issue
 from homeassistant.helpers.typing import ConfigType
 
 from . import assist_satellite, dashboard, ffmpeg_proxy
 from .api import async_setup_api
 from .const import CONF_BLUETOOTH_MAC_ADDRESS, CONF_NOISE_PSK, DOMAIN
-from .custom_llm_api import HuijianControlAPI
 from .domain_data import DomainData
 from .encryption_key_storage import async_get_encryption_key_storage
 from .entry_data import ESPHomeConfigEntry, RuntimeEntryData
@@ -47,8 +45,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await async_setup_https(hass)
     await async_setup_api(hass)
     await async_setup_intents(hass)
-
-    llm.async_register_api(hass, HuijianControlAPI(hass))
 
     manager = get_automation_manager(hass)
     await manager.async_start()

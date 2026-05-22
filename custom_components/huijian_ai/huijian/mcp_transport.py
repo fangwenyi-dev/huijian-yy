@@ -71,7 +71,7 @@ class McpTransport(WsTransport):
 
     async def _create_server(self, context: llm.LLMContext):
         """Create MCP server instance."""
-        llm_api_id = "huijian_control"
+        llm_api_id = llm.LLM_API_ASSIST
         mcp_api = await llm.async_get_api(self.hass, llm_api_id, context)
         tools = [tool.name for tool in mcp_api.tools]
         self.logger.info("MCP server tools: %s, llm_api_id=%s", tools, llm_api_id)
@@ -95,7 +95,7 @@ class McpTransport(WsTransport):
                 context=None,
                 language="*",
                 assistant=conversation.DOMAIN,
-                device_id=self.entry.data.get("speak_id", self.entry.entry_id),
+                device_id=None,
             )
             self._mcp_server = await self._create_server(context)
             self._mcp_server.version = "2.2.0"
