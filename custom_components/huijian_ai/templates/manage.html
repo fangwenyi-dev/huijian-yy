@@ -89,6 +89,14 @@
         const SCENES_API = '/api/huijian-ai/voice-scenes';
         const AUTOS_API = '/api/huijian-ai/automations';
 
+        async function safeJson(resp) {
+            try { return await resp.json(); }
+            catch (e) {
+                const text = await resp.text();
+                throw new Error('服务器返回格式错误: ' + text.slice(0, 100));
+            }
+        }
+
         async function deleteScene(sceneId, triggerPhrase) {
             if (!confirm('确定要删除语音场景 "' + triggerPhrase + '" 吗？')) { return; }
             const btn = event.target;
@@ -96,13 +104,7 @@
             btn.textContent = '删除中...';
             try {
                 const res = await fetch(SCENES_API + '/' + sceneId, { method: 'DELETE' });
-                if (res.status === 401) {
-                    showToast('请先登录 Home Assistant', 'error');
-                    btn.disabled = false;
-                    btn.textContent = '删除';
-                    return;
-                }
-                const data = await res.json();
+                const data = await safeJson(res);
                 if (data.success) {
                     showToast('删除成功', 'success');
                     var el = document.getElementById('scene-' + sceneId);
@@ -122,13 +124,7 @@
             btn.textContent = '删除中...';
             try {
                 const res = await fetch(AUTOS_API + '/' + automationId, { method: 'DELETE' });
-                if (res.status === 401) {
-                    showToast('请先登录 Home Assistant', 'error');
-                    btn.disabled = false;
-                    btn.textContent = '删除';
-                    return;
-                }
-                const data = await res.json();
+                const data = await safeJson(res);
                 if (data.success) {
                     showToast('删除成功', 'success');
                     var el = document.getElementById('auto-' + automationId);
@@ -168,12 +164,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ trigger_phrase: newPhrase })
                 });
-                if (res.status === 401) {
-                    showToast('请先登录 Home Assistant', 'error');
-                    btn.disabled = false; btn.textContent = '保存';
-                    return;
-                }
-                const data = await res.json();
+                const data = await safeJson(res);
                 if (data.success) {
                     showToast('更新成功', 'success');
                     closeEdit();
@@ -213,12 +204,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ trigger: trigger })
                 });
-                if (res.status === 401) {
-                    showToast('请先登录 Home Assistant', 'error');
-                    btn.disabled = false; btn.textContent = '保存';
-                    return;
-                }
-                const data = await res.json();
+                const data = await safeJson(res);
                 if (data.success) {
                     showToast('更新成功', 'success');
                     closeAutoEdit();
@@ -249,10 +235,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ trigger_phrase: triggerPhrase })
                 });
-                const data = await res.json();
-                if (res.status === 401) {
-                    showToast('请先登录 Home Assistant', 'error');
-                } else if (data.success) {
+                const data = await safeJson(res);
+                if (data.success) {
                     showToast('测试成功', 'success');
                 } else {
                     showToast(data.error || '测试失败', 'error');
@@ -275,10 +259,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ automation_id: autoId })
                 });
-                const data = await res.json();
-                if (res.status === 401) {
-                    showToast('请先登录 Home Assistant', 'error');
-                } else if (data.success) {
+                const data = await safeJson(res);
+                if (data.success) {
                     showToast('测试成功，动作已执行', 'success');
                     fetchLogs();
                 } else {
@@ -294,7 +276,7 @@
         async function fetchLogs() {
             try {
                 const res = await fetch('/api/huijian-ai/automation-logs');
-                const logs = await res.json();
+                const logs = await safeJson(res);
                 const tbody = document.getElementById('logBody');
                 const empty = document.getElementById('logEmpty');
                 const table = document.getElementById('logTable');

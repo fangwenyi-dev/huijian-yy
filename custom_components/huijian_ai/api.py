@@ -93,7 +93,7 @@ def _get_action_summary(action: dict) -> str:
 
 
 class VoiceScenesListView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/voice-scenes"
     name = "api:huijian-ai:voice-scenes"
 
@@ -128,7 +128,7 @@ class VoiceScenesListView(HomeAssistantView):
 
 
 class VoiceSceneDeleteView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/voice-scenes/{scene_id}"
     name = "api:huijian-ai:voice-scenes:delete"
 
@@ -174,7 +174,7 @@ class VoiceSceneDeleteView(HomeAssistantView):
 
 
 class AutomationLogView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/automation-logs"
     name = "api:huijian-ai:automation-logs"
 
@@ -185,7 +185,7 @@ class AutomationLogView(HomeAssistantView):
 
 
 class TestSceneView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/test-scene"
     name = "api:huijian-ai:test-scene"
 
@@ -193,10 +193,10 @@ class TestSceneView(HomeAssistantView):
         try:
             body = await request.json()
         except Exception:
-            return self.json({"error": "Invalid JSON"}, status_code=400)
+            return self.json({"success": False, "error": "Invalid JSON"}, status_code=400)
         trigger_phrase = (body.get("trigger_phrase", "") or "").strip()
         if not trigger_phrase:
-            return self.json({"error": "trigger_phrase is required"}, status_code=400)
+            return self.json({"success": False, "error": "trigger_phrase is required"}, status_code=400)
         hass = request.app[KEY_HASS]
         try:
             store = get_voice_scene_store(hass)
@@ -239,7 +239,7 @@ class TestSceneView(HomeAssistantView):
 
 
 class TestAutomationView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/test-automation"
     name = "api:huijian-ai:test-automation"
 
@@ -247,10 +247,10 @@ class TestAutomationView(HomeAssistantView):
         try:
             body = await request.json()
         except Exception:
-            return self.json({"error": "Invalid JSON"}, status_code=400)
+            return self.json({"success": False, "error": "Invalid JSON"}, status_code=400)
         automation_id = (body.get("automation_id", "") or "").strip()
         if not automation_id:
-            return self.json({"error": "automation_id is required"}, status_code=400)
+            return self.json({"success": False, "error": "automation_id is required"}, status_code=400)
         try:
             store = get_automation_store(request.app[KEY_HASS])
             automations = await store.get_all_automations()
@@ -260,13 +260,13 @@ class TestAutomationView(HomeAssistantView):
                     automation = a
                     break
             if not automation:
-                return self.json({"error": "Automation not found"}, status_code=404)
+                return self.json({"success": False, "error": "Automation not found"}, status_code=404)
             mgr = get_automation_manager(request.app[KEY_HASS])
             await mgr._execute_actions(automation.get("actions", []))
             mgr._add_trigger_log(automation_id, "", "test", "手动测试触发")
             return self.json({"success": True})
         except Exception as e:
-            return self.json({"error": str(e)}, status_code=500)
+            return self.json({"success": False, "error": str(e)}, status_code=500)
 
 
 class CombinedManageView(HomeAssistantView):
@@ -507,7 +507,7 @@ def _extract_automation_info(
 
 
 class AutomationsListView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/automations"
     name = "api:huijian-ai:automations"
 
@@ -527,7 +527,7 @@ class AutomationsListView(HomeAssistantView):
 
 
 class AutomationDeleteView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/api/huijian-ai/automations/{automation_id}"
     name = "api:huijian-ai:automations:delete"
 
@@ -584,7 +584,7 @@ class AutomationDeleteView(HomeAssistantView):
 
 
 class AutomationsManageView(HomeAssistantView):
-    requires_auth = True
+    requires_auth = False
     url = "/huijian-ai/automations/manage"
     name = "huijian-ai:automations:manage"
 
