@@ -10,35 +10,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-_ACTION_TO_INTENT = {
-    "turn_on": "TurnDeviceOn",
-    "turn_off": "TurnDeviceOff",
-    "adjust": "AdjustDeviceAttribute",
-    "set_mode": "SetDeviceMode",
-}
-
-_DOMAIN_ALIASES = "lamp→light, ac→climate, curtain→cover, window→cover/button"
-
-_WINDOW_KEYWORDS = [
-    "平推窗", "平开窗", "推拉窗",
-    "内开窗", "外开窗", "天窗", "飘窗", "推拉门",
-    "内开内倒窗", "单内倒窗", "外装平开窗", "智能窗",
-    "窗户", "窗",
-]
-
-_WINDOW_EXCLUDES = {"窗帘", "窗台", "橱窗", "窗花", "窗框", "窗纱"}
-
-
-def _has_window_keyword(name: str) -> bool:
-    if not name:
-        return False
-    name_lower = name.strip().lower()
-    if any(ex in name_lower for ex in _WINDOW_EXCLUDES):
-        return False
-    for kw in _WINDOW_KEYWORDS:
-        if kw in name_lower:
-            return True
-    return False
+_DOMAIN_ALIASES = "lamp\u2192light, ac\u2192climate, curtain\u2192cover, window\u2192cover/button"
 
 
 def _build_slots(params: dict) -> dict:
@@ -79,10 +51,10 @@ class _Tool(llm.Tool):
 
 
 class HuijianControlAPI(llm.API):
-    """Custom LLM API exposing only essential tools for device/scene control."""
+    """Custom LLM API exposing all huijian-ai tools."""
 
     def __init__(self, hass: HomeAssistant) -> None:
-        super().__init__(hass=hass, id="huijian_control", name="慧简AI控制")
+        super().__init__(hass=hass, id="huijian_control", name="\u6167\u7b80AI\u63a7\u5236")
 
     async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:
         return llm.APIInstance(
@@ -99,18 +71,19 @@ class HuijianControlAPI(llm.API):
         from .intent_live_context import async_should_expose
 
         parts = [
-            "操作指南(含部分设备名参考—完整状态用HuijianGetLiveContext获取):",
-            "1. 先调用HuijianGetLiveContext查看设备实时状态（含所有设备名、区域、当前值）",
-            "2. 用DeviceControl控制设备: action=turn_on(开)/turn_off(关)/adjust(调)/set_mode(设模式)",
-            "3. 只有窗户相关的操作(开窗/关窗/暂停/内倒/内导)才用ControlWindow",
-            "4. target参数必须包含devices并指定domains（如domains:['light']表示灯）",
-            "5. 实体名用中文精确匹配，区域名也用中文",
-            f"6. 领域别名: {_DOMAIN_ALIASES}",
-            "7. delta格式: +10(增加) -10(减少) 50(设值) 50%(设百分比) max/min(极限) #FF0000(色值)",
-            "8. mode可选值: heat/cool/auto/dry/fan_only(空调/气候设备)",
+            "\u64cd\u4f5c\u6307\u5357(\u542b\u90e8\u5206\u8bbe\u5907\u540d\u53c2\u8003\u2014\u5b8c\u6574\u72b6\u6001\u7528HuijianGetLiveContext\u83b7\u53d6):",
+            "1. \u5148\u8c03\u7528HuijianGetLiveContext\u67e5\u770b\u8bbe\u5907\u5b9e\u65f6\u72b6\u6001\uff08\u542b\u6240\u6709\u8bbe\u5907\u540d\u3001\u533a\u57df\u3001\u5f53\u524d\u503c\uff09",
+            "2. \u5f00\u8bbe\u5907\u7528HassTurnDeviceOn \u5173\u8bbe\u5907\u7528HassTurnDeviceOff",
+            "3. \u8c03\u5c5e\u6027(\u4eae\u5ea6/\u989c\u8272/\u6e29\u5ea6/\u98ce\u901f)\u7528HassAdjustDeviceAttribute",
+            "4. \u8bbe\u7a7a\u8c03\u6a21\u5f0f\u7528HassSetDeviceMode",
+            "5. \u7a97\u6237\u76f8\u5173\u64cd\u4f5c(\u5f00\u7a97/\u5173\u7a97/\u6682\u505c/\u5185\u5012)\u7528ControlWindow",
+            "6. target\u53c2\u6570\u5fc5\u987b\u5305\u542bdevices\u5e76\u6307\u5b9adomains\uff08\u5982domains:['light']\u8868\u793a\u706f\uff09",
+            "7. \u5b9e\u4f53\u540d\u7528\u4e2d\u6587\u7cbe\u786e\u5339\u914d\uff0c\u533a\u57df\u540d\u4e5f\u7528\u4e2d\u6587",
+            f"8. \u9886\u57df\u522b\u540d: {_DOMAIN_ALIASES}",
+            "9. delta\u683c\u5f0f: +10(\u589e\u52a0) -10(\u51cf\u5c11) 50(\u8bbe\u503c) 50%(\u8bbe\u767e\u5206\u6bd4) max/min(\u6781\u9650) #FF0000(\u8272\u503c)",
+            "10. mode\u53ef\u9009\u503c: heat/cool/auto/dry/fan_only(\u7a7a\u8c03/\u6c14\u5019\u8bbe\u5907)",
         ]
 
-        # Add a compact entity reference (names only, no states — to avoid duplicating GetLiveContext)
         assistant = llm_context.assistant if llm_context and hasattr(llm_context, "assistant") else None
         from homeassistant.helpers import area_registry as ar, entity_registry as er
 
@@ -148,11 +121,11 @@ class HuijianControlAPI(llm.API):
                 no_area_entities.append(line)
 
         if area_entities or no_area_entities:
-            parts.append("可用设备(按区域):")
+            parts.append("\u53ef\u7528\u8bbe\u5907(\u6309\u533a\u57df):")
             for area in sorted(area_entities):
                 parts.append(f"  [{area}]: {', '.join(area_entities[area])}")
             if no_area_entities:
-                parts.append(f"  [其他]: {', '.join(no_area_entities)}")
+                parts.append(f"  [\u5176\u4ed6]: {', '.join(no_area_entities)}")
 
         return "\n".join(parts)
 
@@ -160,45 +133,69 @@ class HuijianControlAPI(llm.API):
     def tools(self) -> list[_Tool]:
         return [
             _Tool(
-                "DeviceControl",
-                "HA灯/开关/空调/窗帘/风扇/锁/阀门等全部HA设备的开/关/调/设模式。 "
-                "turn_on(开) turn_off(关) adjust(调) set_mode(设模式) "
-                "规则: adjust需配合attribute+delta set_mode需配合mode turn_on/turn_off只需target. "
-                "delta: +10增 -10减 50设值 50%百分比 max/min极限 #FF0000色值. "
-                "mode: heat/cool/auto/dry/fan_only. "
-                "示例: action=turn_on target=[{devices:[{domains:['light'],name:'筒灯'}],area:'办公室'}]. "
-                "窗自动转发ControlWindow. ESP32板载灯用self_lamp.",
-                self._handle_device_control,
+                "HassTurnDeviceOn",
+                "Turns on/opens/presses a device. "
+                "Use for lights/fan/ac/cover/lock/valve/vacuum/alarm. "
+                "Window cmds auto-forward to ControlWindow.",
+                self._handle_turn_on,
+                vol.Schema({vol.Required("target"): _target_schema()}),
+            ),
+            _Tool(
+                "HassTurnDeviceOff",
+                "Turns off/closes a device. "
+                "Use for lights/fan/ac/cover/lock/valve/vacuum/alarm. "
+                "Window cmds auto-forward to ControlWindow.",
+                self._handle_turn_off,
+                vol.Schema({vol.Required("target"): _target_schema()}),
+            ),
+            _Tool(
+                "HassSetDeviceMode",
+                "Set device operation mode. "
+                "Supported: climate(heat/cool/auto/dry/fan_only), humidifier. "
+                "Examples: mode=heat, target=\u7a7a\u8c03.",
+                self._handle_set_mode,
                 vol.Schema({
-                    vol.Required("action"): vol.In(["turn_on", "turn_off", "adjust", "set_mode"]),
-                    vol.Optional("target"): _target_schema(),
-                    vol.Optional("attribute"): vol.In(["brightness", "color", "temperature", "position", "fan_speed", "humidity"]),
-                    vol.Optional("delta"): cv.string,
-                    vol.Optional("mode"): cv.string,
+                    vol.Required("target"): _target_schema(),
+                    vol.Required("mode"): cv.string,
+                }),
+            ),
+            _Tool(
+                "HassAdjustDeviceAttribute",
+                "Set or adjust a device attribute value. "
+                "Attributes: brightness/color/temperature/position/fan_speed/humidity. "
+                "Delta: +10(increase) -10(decrease) 50(set) 50%(percent) max/min #FF0000(color). "
+                "Examples: attribute=brightness delta=+20 target=\u7b52\u706f.",
+                self._handle_adjust_attribute,
+                vol.Schema({
+                    vol.Required("target"): _target_schema(),
+                    vol.Required("attribute"): vol.In(["brightness", "color", "temperature", "position", "fan_speed", "humidity"]),
+                    vol.Required("delta"): cv.string,
                 }),
             ),
             _Tool(
                 "ControlWindow",
-                "窗户控制 ● open(开) close(关) pause(暂停) tilt(内倒/内岛/内导) 兼容A "
-                "● 窗类型: 平推窗/平开窗/推拉窗/内开窗/外开窗/天窗/飘窗/智能窗/窗户 "
-                "● 非窗户设备用DeviceControl",
+                "Control windows: open/close/pause/tilt(\u5185\u5012). "
+                "Window types: \u5e73\u63a8\u7a97/\u5e73\u5f00\u7a97/\u63a8\u62c9\u7a97/\u5185\u5f00\u7a97/\u5916\u5f00\u7a97/\u5929\u7a97/\u98d8\u7a97/\u667a\u80fd\u7a97/\u7a97\u6237. "
+                "Non-window devices use HassTurnDeviceOn/Off.",
                 self._handle_control_window,
                 vol.Schema({
-                    vol.Required("action"): vol.In(["open", "close", "pause", "A", "tilt"]),
+                    vol.Required("action"): cv.string,
                     vol.Required("target"): _target_schema(),
                 }),
             ),
             _Tool(
                 "HuijianGetLiveContext",
-                "获取所有设备实时状态(设备名/区域/当前值/模式) ● 做控制决策前先调用此工具获取最新信息",
+                "Get real-time state of all devices (name/area/value/mode). "
+                "Call before making control decisions to get current device status.",
                 self._call_intent_factory("huijianGetLiveContext"),
                 vol.Schema({}),
             ),
             _Tool(
                 "HassCreateVoiceScene",
-                "创建语音场景 ● 用户说'当我说xxx时帮我yyy'时使用 "
-                "● 参数: trigger_phrase(触发短语), actions[](动作数组) "
-                "● 传感器触发请用HassCreateAutomation",
+                "Create a voice-triggered scene. "
+                "Use when user says '\u5f53\u6211\u8bf4xxx\u65f6\u5e2e\u6211yyy'. "
+                "Parameters: trigger_phrase(spoken trigger), actions[](actions to execute). "
+                "Sensor triggers use HassCreateAutomation instead.",
                 self._call_intent_factory("HassCreateVoiceScene"),
                 vol.Schema({
                     vol.Required("trigger_phrase"): cv.string,
@@ -207,13 +204,13 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassTriggerVoiceScene",
-                "触发语音场景 ● 按trigger_phrase触发已创建的场景",
+                "Trigger an existing voice scene by its trigger phrase.",
                 self._call_intent_factory("HassTriggerVoiceScene"),
                 vol.Schema({vol.Required("trigger_phrase"): cv.string}),
             ),
             _Tool(
                 "HassDeleteVoiceScene",
-                "删除语音场景 ● 按trigger_phrase或scene_id删除",
+                "Delete a voice scene by trigger_phrase or scene_id.",
                 self._call_intent_factory("HassDeleteVoiceScene"),
                 vol.Schema({
                     vol.Optional("trigger_phrase"): cv.string,
@@ -222,67 +219,65 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassListVoiceScenes",
-                "列出所有语音场景 ● 无需参数",
+                "List all stored voice scenes. No parameters required.",
                 self._call_intent_factory("HassListVoiceScenes"),
                 vol.Schema({}),
             ),
+            _Tool(
+                "HassCreateAutomation",
+                "Create a sensor-triggered automation. "
+                "Use when user says '\u5f53\u6e29\u5ea6\u5927\u4e8e30\u5ea6\u5c31\u6253\u5f00\u7a97\u6237'. "
+                "Parameters: trigger(entity_id + above/below), actions[]. "
+                "Voice triggers use HassCreateVoiceScene instead.",
+                self._call_intent_factory("HassCreateAutomation"),
+                vol.Schema({
+                    vol.Required("trigger"): {
+                        vol.Required("entity_id"): cv.string,
+                        vol.Optional("above"): vol.Coerce(float),
+                        vol.Optional("below"): vol.Coerce(float),
+                    },
+                    vol.Required("actions"): vol.All(cv.ensure_list, [dict]),
+                }),
+            ),
+            _Tool(
+                "HassDeleteAutomation",
+                "Delete an automation by automation_id.",
+                self._call_intent_factory("HassDeleteAutomation"),
+                vol.Schema({vol.Required("automation_id"): cv.string}),
+            ),
+            _Tool(
+                "HassListAutomations",
+                "List all stored automations. No parameters required.",
+                self._call_intent_factory("HassListAutomations"),
+                vol.Schema({}),
+            ),
+            _Tool(
+                "HassUpdateAutomation",
+                "Update an existing automation's trigger or actions by automation_id.",
+                self._call_intent_factory("HassUpdateAutomation"),
+                vol.Schema({
+                    vol.Required("automation_id"): cv.string,
+                    vol.Optional("trigger"): {
+                        vol.Required("entity_id"): cv.string,
+                        vol.Optional("above"): vol.Coerce(float),
+                        vol.Optional("below"): vol.Coerce(float),
+                    },
+                    vol.Optional("actions"): vol.All(cv.ensure_list, [dict]),
+                }),
+            ),
         ]
 
-    async def _handle_device_control(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext) -> dict:
-        arguments = tool_input.tool_args
-        action = arguments.get("action", "")
-        target = arguments.get("target", [])
+    async def _handle_turn_on(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext) -> dict:
+        return await self._call_intent(hass, "TurnDeviceOn", tool_input.tool_args, llm_context)
 
-        window_targets: list = []
-        non_window_targets: list = []
+    async def _handle_turn_off(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext) -> dict:
+        return await self._call_intent(hass, "TurnDeviceOff", tool_input.tool_args, llm_context)
 
-        for t in target:
-            devices = t.get("devices", [])
-            window_devices = []
-            non_window_devices = []
-            for device in devices:
-                name = device.get("name", "")
-                if name and _has_window_keyword(name):
-                    window_devices.append(device)
-                else:
-                    non_window_devices.append(device)
-            if window_devices:
-                window_targets.append({**t, "devices": window_devices})
-            if non_window_devices:
-                non_window_targets.append({**t, "devices": non_window_devices})
+    async def _handle_set_mode(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext) -> dict:
+        return await self._call_intent(hass, "SetDeviceMode", tool_input.tool_args, llm_context)
 
-        if window_targets:
-            window_action = "open" if action in ("turn_on", "turn_off") else action
-            if action == "turn_off":
-                window_action = "close"
-            _LOGGER.info(
-                "Forwarding %d window targets to ControlWindow(action=%s)", len(window_targets), window_action,
-            )
-            await self._call_intent(hass, "ControlWindow", {"action": window_action, "target": window_targets}, llm_context)
-
-        if not non_window_targets:
-            return {"success": True, "message": "All targets forwarded to ControlWindow"}
-
-        intent_type = _ACTION_TO_INTENT.get(action)
-        if not intent_type:
-            return {"success": False, "error": f"Unknown action: {action}"}
-
-        for t in non_window_targets:
-            for device in t.get("devices", []):
-                if "domains" not in device:
-                    device["domains"] = []
-
-        intent_args = {"target": non_window_targets}
-        if action == "adjust":
-            if "attribute" in arguments:
-                intent_args["attribute"] = arguments["attribute"]
-            if "delta" in arguments:
-                intent_args["delta"] = arguments["delta"]
-        elif action == "set_mode":
-            if "mode" in arguments:
-                intent_args["mode"] = arguments["mode"]
-
-        return await self._call_intent(hass, intent_type, intent_args, llm_context)
+    async def _handle_adjust_attribute(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext) -> dict:
+        return await self._call_intent(hass, "AdjustDeviceAttribute", tool_input.tool_args, llm_context)
 
     async def _handle_control_window(self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext) -> dict:
         return await self._call_intent(hass, "ControlWindow", tool_input.tool_args, llm_context)
