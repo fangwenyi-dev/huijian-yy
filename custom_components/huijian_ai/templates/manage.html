@@ -168,13 +168,18 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ trigger_phrase: newPhrase })
                 });
+                if (res.status === 401) {
+                    showToast('请先登录 Home Assistant', 'error');
+                    btn.disabled = false; btn.textContent = '保存';
+                    return;
+                }
                 const data = await res.json();
                 if (data.success) {
                     showToast('更新成功', 'success');
                     closeEdit();
                     setTimeout(function() { location.reload(); }, 500);
-                } else { throw new Error(data.error || '更新失败'); }
-            } catch (e) { showToast(e.message, 'error'); }
+                } else { showToast(data.error || '更新失败', 'error'); }
+            } catch (e) { showToast(e.message || '网络错误', 'error'); }
             btn.disabled = false; btn.textContent = '保存';
         }
 
@@ -208,13 +213,18 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ trigger: trigger })
                 });
+                if (res.status === 401) {
+                    showToast('请先登录 Home Assistant', 'error');
+                    btn.disabled = false; btn.textContent = '保存';
+                    return;
+                }
                 const data = await res.json();
                 if (data.success) {
                     showToast('更新成功', 'success');
                     closeAutoEdit();
                     setTimeout(function() { location.reload(); }, 500);
-                } else { throw new Error(data.error || '更新失败'); }
-            } catch (e) { showToast(e.message, 'error'); }
+                } else { showToast(data.error || '更新失败', 'error'); }
+            } catch (e) { showToast(e.message || '网络错误', 'error'); }
             btn.disabled = false; btn.textContent = '保存';
         }
 
@@ -240,10 +250,12 @@
                     body: JSON.stringify({ trigger_phrase: triggerPhrase })
                 });
                 const data = await res.json();
-                if (data.success) {
+                if (res.status === 401) {
+                    showToast('请先登录 Home Assistant', 'error');
+                } else if (data.success) {
                     showToast('测试成功', 'success');
                 } else {
-                    throw new Error(data.error || '测试失败');
+                    showToast(data.error || '测试失败', 'error');
                 }
             } catch (e) {
                 showToast(e.message || '网络错误', 'error');
@@ -264,11 +276,13 @@
                     body: JSON.stringify({ automation_id: autoId })
                 });
                 const data = await res.json();
-                if (data.success) {
+                if (res.status === 401) {
+                    showToast('请先登录 Home Assistant', 'error');
+                } else if (data.success) {
                     showToast('测试成功，动作已执行', 'success');
                     fetchLogs();
                 } else {
-                    throw new Error(data.error || '测试失败');
+                    showToast(data.error || '测试失败', 'error');
                 }
             } catch (e) {
                 showToast(e.message || '网络错误', 'error');

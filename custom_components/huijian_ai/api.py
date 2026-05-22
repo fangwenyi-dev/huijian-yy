@@ -152,12 +152,14 @@ class VoiceSceneDeleteView(HomeAssistantView):
         hass = request.app[KEY_HASS]
         try:
             body = await request.json()
+            _LOGGER.info("Updating voice scene %s: body=%s", scene_id, body)
             store = get_voice_scene_store(hass)
             success, message = await store.update_scene(
                 scene_id,
                 trigger_phrase=body.get("trigger_phrase"),
                 actions=body.get("actions"),
             )
+            _LOGGER.info("Update scene result: success=%s, message=%s", success, message)
             return self.json(
                 {
                     "success": success,
@@ -167,7 +169,7 @@ class VoiceSceneDeleteView(HomeAssistantView):
                 200 if success else 400,
             )
         except Exception as e:
-            _LOGGER.error("Failed to update voice scene: %s", e)
+            _LOGGER.error("Failed to update voice scene %s: %s", scene_id, e, exc_info=True)
             return self.json({"success": False, "error": str(e)}, 500)
 
 
@@ -195,16 +197,45 @@ class TestSceneView(HomeAssistantView):
         trigger_phrase = (body.get("trigger_phrase", "") or "").strip()
         if not trigger_phrase:
             return self.json({"error": "trigger_phrase is required"}, status_code=400)
+        hass = request.app[KEY_HASS]
         try:
-            result = await ha_intent.async_handle(
-                request.app[KEY_HASS],
-                DOMAIN,
-                "HassTriggerVoiceScene",
-                slots={"trigger_phrase": {"value": trigger_phrase}},
-            )
-            return self.json({"success": True, "result": str(result)})
+            store = get_voice_scene_store(hass)
+            scene = await store.get_scene_by_trigger(trigger_phrase)
+            if not scene:
+                return self.json(
+                    {"success": False, "error": f"未找到触发词'{trigger_phrase}'对应的场景"},
+                    status_code=404,
+                )
+
+            actions = scene.get("actions", [])
+            if not actions:
+                return self.json(
+                    {"success": False, "error": "场景没有配置任何动作"},
+                    status_code=400,
+                )
+
+            executed = []
+            has_errors = False
+            for action in actions:
+                intent_name = action.get("intent") or action.get("name")
+                params = action.get("params") or action.get("parameters", {})
+                ha_slots = {k: {"value": v} for k, v in params.items()}
+                try:
+                    await ha_intent.async_handle(
+                        hass, DOMAIN, intent_name, slots=ha_slots,
+                    )
+                    executed.append({"intent": intent_name, "result": "success"})
+                except Exception as e:
+                    has_errors = True
+                    _LOGGER.error("Test scene action failed: %s: %s", intent_name, e)
+                    executed.append({"intent": intent_name, "result": "error", "error": str(e)})
+
+            if has_errors:
+                return self.json({"success": False, "error": "部分动作执行失败", "executed": executed})
+            return self.json({"success": True, "message": "测试完成"})
         except Exception as e:
-            return self.json({"error": str(e)}, status_code=500)
+            _LOGGER.error("Test scene failed: %s", e, exc_info=True)
+            return self.json({"success": False, "error": str(e)}, status_code=500)
 
 
 class TestAutomationView(HomeAssistantView):
@@ -337,7 +368,7 @@ class CombinedManageView(HomeAssistantView):
     <div class="card-header">
         <div><span class="card-trigger auto">{html_mod.escape(trigger_display)}</span><span class="card-tag auto">传感器自动化</span></div>
         <button class="delete-btn" onclick="deleteAutomation('{auto_id}', '{html_mod.escape(trigger_display.replace("'", "\\'"))}')">删除</button>
-        <button class="edit-btn" onclick="openEditAuto('{auto_id}', '{html_mod.escape(trigger_entity.replace("'", "\\'"))}', '{above}', '{below if below is not None else ""}')">编辑</button>
+        <button class="edit-btn" onclick="openEditAuto('{auto_id}', '{html_mod.escape(trigger_entity.replace("'", "\\'"))}', '{above if above is not None else ""}', '{below if below is not None else ""}')">编辑</button>
         <button class="test-btn" onclick="testAutomation('{auto_id}')">测试</button>
     </div>
     <div class="info">创建时间: {created_display}{trigger_info}</div>
@@ -520,6 +551,7 @@ class AutomationDeleteView(HomeAssistantView):
         hass = request.app[KEY_HASS]
         try:
             body = await request.json()
+            _LOGGER.info("Updating automation %s: body=%s", automation_id, body)
             store = get_automation_store(hass)
             existing = await store.get_automation(automation_id)
             if not existing:
@@ -537,6 +569,7 @@ class AutomationDeleteView(HomeAssistantView):
             success, message = await store.update_automation(
                 automation_id, trigger, actions
             )
+            _LOGGER.info("Update automation result: success=%s, message=%s", success, message)
             return self.json(
                 {
                     "success": success,
@@ -546,7 +579,7 @@ class AutomationDeleteView(HomeAssistantView):
                 200 if success else 400,
             )
         except Exception as e:
-            _LOGGER.error("Failed to update automation: %s", e)
+            _LOGGER.error("Failed to update automation %s: %s", automation_id, e, exc_info=True)
             return self.json({"success": False, "error": str(e)}, 500)
 
 
