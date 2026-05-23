@@ -406,8 +406,9 @@ class HassTriggerVoiceSceneIntent(intent.IntentHandler):
                     {"intent": intent_name, "result": "error", "error": str(e)}
                 )
 
+        all_success = all(a.get("result") != "error" for a in executed_actions)
         return {
-            "success": True,
+            "success": all_success,
             "scene_id": scene.get("scene_id"),
             "executed_actions": executed_actions,
             "message": f"已执行场景：{trigger_phrase}",

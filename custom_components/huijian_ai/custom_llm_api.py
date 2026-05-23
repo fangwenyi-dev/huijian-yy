@@ -343,7 +343,11 @@ class HuijianControlAPI(llm.API):
                     matching_domains = set()
                     name_lower = name.lower().strip()
                     for state in hass.states.async_all():
+<<<<<<< HEAD
                         if name_lower == state.name.lower() or name_lower in state.name.lower():
+=======
+                        if name_lower == state.name.lower() or state.name.lower().endswith(name_lower):
+>>>>>>> 5a071f7 (修复 Bug1 ZeroDivisionError + Bug2 domain子串过匹配 + D3 场景success动态判断)
                             matching_domains.add(state.domain)
                     if matching_domains:
                         if not enriched:

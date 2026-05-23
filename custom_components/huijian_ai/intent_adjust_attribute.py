@@ -437,9 +437,11 @@ def adjust_climate_fan_speed(ctx: AdjustmentContext, target: AdjustmentTarget):
             return
         raise intent.IntentHandleError("unsupported the mode")
 
-    # 档位排除掉自动
     if fan_modes[0] == "auto":
         fan_modes = fan_modes[1:]
+
+    if not fan_modes:
+        raise intent.IntentHandleError("该空调仅支持自动档位，无法调节风速")
 
     percentage_step = 100 // len(fan_modes)
     target.attributes = {

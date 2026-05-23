@@ -23,7 +23,11 @@ from .entry_data import ESPHomeConfigEntry, RuntimeEntryData
 from .huijian import LOGGER, Dict, get_entry_data, mcp_transport
 from .huijian.http import async_setup_https
 from .intent import async_setup_intents
+<<<<<<< HEAD
 from .intent_automation import get_automation_manager, reset_automation_globals
+=======
+from .intent_automation import get_automation_manager, reset_automation_globals
+>>>>>>> 5a071f7 (修复 Bug1 ZeroDivisionError + Bug2 domain子串过匹配 + D3 场景success动态判断)
 from .intent_voice_scene import reset_voice_scene_globals
 from .manager import (DEVICE_CONFLICT_ISSUE_FORMAT, ESPHomeManager,
                       cleanup_instance)
