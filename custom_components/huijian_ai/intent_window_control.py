@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -16,6 +17,8 @@ from .intent_window_const import (WINDOW_ACTION_MAPPING, WINDOW_NAME_MAPPING,
                                   find_window_buttons, normalize_chinese_numbers)
 
 _LOGGER = logging.getLogger(__name__)
+
+ACTION_CHINESE = {"open": "开启", "close": "关闭", "pause": "暂停", "a": "内倒"}
 
 
 async def _press_multi_buttons(
@@ -37,6 +40,7 @@ async def _press_multi_buttons(
             )
             results.append(button_entity_id)
             _LOGGER.info("Pressed all-window button: %s", button_entity_id)
+            await asyncio.sleep(0.5)
         except Exception as err:
             _LOGGER.error("Failed to press %s: %s", button_entity_id, err)
     return results
@@ -109,7 +113,7 @@ class ControlWindowIntent(intent.IntentHandler):
                     )
                     return {
                         "success": True,
-                        "message": f"已{action}所有窗户",
+                        "message": f"已{ACTION_CHINESE.get(action, action)}所有窗户",
                         "buttons": results,
                     }
             return {
@@ -138,7 +142,7 @@ class ControlWindowIntent(intent.IntentHandler):
                     )
                     return {
                         "success": True,
-                        "message": f"已{action}所有窗户",
+                        "message": f"已{ACTION_CHINESE.get(action, action)}所有窗户",
                         "buttons": results,
                     }
             return {
