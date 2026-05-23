@@ -32,6 +32,9 @@ WINDOW_ACTION_MAPPING = {
 
 REMOVE_KEYWORDS = ["删除", "remove", "shan_chu", "shanchu", "delete"]
 
+# Pre-computed set of all window names (keys + values) for fast reuse
+WINDOW_ALL_NAMES: set[str] = set(WINDOW_NAME_MAPPING.keys()) | set(WINDOW_NAME_MAPPING.values())
+
 
 def normalize_text(text: str) -> str:
     return text.lower().strip() if text else ""
@@ -134,7 +137,7 @@ def _strip_window_names(text_lower: str) -> str:
     variants like '窗' are also removed.
     """
     remaining = text_lower
-    all_names = set(WINDOW_NAME_MAPPING.keys()) | set(WINDOW_NAME_MAPPING.values())
+    all_names = WINDOW_ALL_NAMES
     for wname in sorted(all_names, key=len, reverse=True):
         remaining = remaining.replace(wname.lower(), "")
     return remaining
@@ -172,6 +175,72 @@ def is_remove_button(state) -> bool:
     return False
 
 
+def _build_alt_names(window_name_lower: str) -> set[str]:
+    """Build alternative name set from window name and WINDOW_NAME_MAPPING."""
+    alt_names = {window_name_lower}
+    for key, value in WINDOW_NAME_MAPPING.items():
+        if value.lower() == window_name_lower and key.lower() != window_name_lower:
+            alt_names.add(key.lower())
+    return alt_names
+
+
+def _build_conflict_names(window_name_lower: str, alt_names: set[str]) -> set[str]:
+    """Build set of longer window names that might cause substring conflicts."""
+    conflicting: set[str] = set()
+    for wname in set(WINDOW_NAME_MAPPING.values()):
+        wname_lower = wname.lower()
+        if len(wname) > len(window_name_lower):
+            if any(alt in wname_lower for alt in alt_names):
+                conflicting.add(wname_lower)
+    for wkey in set(WINDOW_NAME_MAPPING.keys()):
+        wkey_lower = wkey.lower()
+        if wkey_lower != window_name_lower and len(wkey) > len(window_name_lower):
+            if any(alt in wkey_lower for alt in alt_names):
+                conflicting.add(wkey_lower)
+    return conflicting
+
+
+def _match_by_name_or_device(
+    entity_id: str, name_lower: str, alt_names: set[str],
+    entity_registry, device_registry,
+) -> bool:
+    """Check if button name or device name matches any alt name."""
+    if any(alt in name_lower for alt in alt_names):
+        return True
+    entry_check = entity_registry.async_get(entity_id)
+    if entry_check and entry_check.device_id:
+        device_check = device_registry.async_get(entry_check.device_id)
+        if device_check:
+            device_display_lower = (
+                device_check.name_by_user or device_check.name or ""
+            ).lower()
+            if any(alt in device_display_lower for alt in alt_names):
+                return True
+    return False
+
+
+def _passes_exact_filter(
+    entity_id: str, name_lower: str, original_name_lower: str | None,
+    entity_registry, device_registry,
+) -> bool:
+    """Check if button passes the original name exact filter."""
+    if original_name_lower is None:
+        return True
+    if original_name_lower in name_lower:
+        return True
+    entry = entity_registry.async_get(entity_id)
+    if entry and entry.device_id:
+        device = device_registry.async_get(entry.device_id)
+        if device:
+            device_display = (device.name_by_user or device.name or "").lower()
+            if (
+                original_name_lower in device_display
+                or device_display in original_name_lower
+            ):
+                return True
+    return False
+
+
 def find_window_buttons(
     hass, window_name: str, area_name: str | None, original_name: str | None = None
 ) -> dict[str, str]:
@@ -201,31 +270,10 @@ def find_window_buttons(
     skip_area_count = 0
     skip_remove_count = 0
 
-    # Build alternative names: e.g. window_name="窗户" → also check "窗" (the key)
     window_name_lower = window_name.lower()
-    alt_names = {window_name_lower}
-    for key, value in WINDOW_NAME_MAPPING.items():
-        if value.lower() == window_name_lower and key.lower() != window_name_lower:
-            alt_names.add(key.lower())
+    alt_names = _build_alt_names(window_name_lower)
+    conflicting_longer_names = _build_conflict_names(window_name_lower, alt_names)
 
-    # Build set of longer window names that contain this window_name as substring
-    # Prevents matching e.g. "内开内倒窗" buttons when searching for "内开窗"
-    _conflicting_longer_names: set[str] = set()
-    for wname in set(WINDOW_NAME_MAPPING.values()):
-        wname_lower = wname.lower()
-        if len(wname) > len(window_name):
-            if any(alt in wname_lower for alt in alt_names):
-                _conflicting_longer_names.add(wname_lower)
-    # Also check keys of WINDOW_NAME_MAPPING for conflicts
-    for wkey in set(WINDOW_NAME_MAPPING.keys()):
-        wkey_lower = wkey.lower()
-        if wkey_lower != window_name_lower and len(wkey) > len(window_name):
-            if any(alt in wkey_lower for alt in alt_names):
-                _conflicting_longer_names.add(wkey_lower)
-
-    # If the original name is more specific than the extracted window name,
-    # also filter by the original name for precise matching
-    # e.g., window_name="窗户", original_name="2号测试窗户"
     use_exact_filter = (
         original_name and original_name.strip().lower() != window_name_lower
     )
@@ -240,43 +288,16 @@ def find_window_buttons(
         entity_id = state.entity_id
         name_lower = name.lower()
 
-        # Check window keywords in BOTH entity name and device name.
-        # Entity name may be generic ("开窗器 开启") while device name
-        # contains the specific window type ("平推窗" / "2号测试窗户")
-        alt_matched = any(alt in name_lower for alt in alt_names)
-        if not alt_matched:
-            entry_check = entity_registry.async_get(entity_id)
-            if entry_check and entry_check.device_id:
-                device_check = device_registry.async_get(entry_check.device_id)
-                if device_check:
-                    device_display_lower = (
-                        device_check.name_by_user or device_check.name or ""
-                    ).lower()
-                    alt_matched = any(alt in device_display_lower for alt in alt_names)
-        if not alt_matched:
+        if not _match_by_name_or_device(
+            entity_id, name_lower, alt_names, entity_registry, device_registry
+        ):
             continue
-        if any(ln.lower() in name_lower for ln in _conflicting_longer_names):
+        if any(ln.lower() in name_lower for ln in conflicting_longer_names):
             continue
-        if use_exact_filter and original_name_lower not in name_lower:
-            # Gateway fallback: button names like "开窗器 {sn} 开启" don't contain
-            # the device's custom name (e.g., "2号测试窗").
-            # Check if the button's device name matches instead.
-            entry = entity_registry.async_get(entity_id)
-            if entry and entry.device_id:
-                device = device_registry.async_get(entry.device_id)
-                if device:
-                    device_display = (device.name_by_user or device.name or "").lower()
-                    if (
-                        original_name_lower in device_display
-                        or device_display in original_name_lower
-                    ):
-                        pass  # device name matches, allow through
-                    else:
-                        continue
-                else:
-                    continue
-            else:
-                continue
+        if not _passes_exact_filter(
+            entity_id, name_lower, original_name_lower, entity_registry, device_registry
+        ):
+            continue
 
         match_count += 1
 
@@ -390,11 +411,7 @@ def find_all_window_buttons_by_action(
 
         # Auto-derive window keywords from WINDOW_NAME_MAPPING
         # so they stay in sync when new window types are added
-        window_keywords = sorted(
-            set(WINDOW_NAME_MAPPING.keys()) | set(WINDOW_NAME_MAPPING.values()),
-            key=len,
-            reverse=True,
-        )
+        window_keywords = sorted(WINDOW_ALL_NAMES, key=len, reverse=True)
         has_window_keyword = any(kw.lower() in name_lower for kw in window_keywords)
         if not has_window_keyword:
             continue

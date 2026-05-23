@@ -405,6 +405,18 @@ class TurnDeviceIntentBase(intent.IntentHandler):
             done, pending = await asyncio.wait({task}, timeout=self.service_timeout)
             if pending:
                 _LOGGER.error("Service call timed out: %s", task.get_name())
+
+                def _log_exception(t: asyncio.Task) -> None:
+                    if t.cancelled():
+                        return
+                    exc = t.exception()
+                    if exc:
+                        _LOGGER.error(
+                            "Background service call %s eventually failed: %s",
+                            t.get_name(), exc, exc_info=exc,
+                        )
+
+                task.add_done_callback(_log_exception)
         except asyncio.CancelledError:
             _LOGGER.debug("Service call was cancelled: %s", task.get_name())
             task.cancel()

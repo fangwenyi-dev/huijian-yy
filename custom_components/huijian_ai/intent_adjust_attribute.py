@@ -579,19 +579,26 @@ def adjust_cover_position(ctx: AdjustmentContext, target: AdjustmentTarget):
 @register_adjustment("number", "value")
 def adjust_number_value(ctx: AdjustmentContext, target: AdjustmentTarget):
     target.attributes = {}
+    min_val = ctx.state.attributes.get("min")
+    max_val = ctx.state.attributes.get("max")
+    value = ctx.delta.value
+    if min_val is not None and value < min_val:
+        raise intent.IntentHandleError(f"数值 {value} 低于最小值 {min_val}")
+    if max_val is not None and value > max_val:
+        raise intent.IntentHandleError(f"数值 {value} 超出最大值 {max_val}")
     target.service = number.const.SERVICE_SET_VALUE
-    target.service_data["value"] = ctx.delta.value
-    target.attributes["updated_value"] = ctx.delta.value
+    target.service_data["value"] = value
+    target.attributes["updated_value"] = value
 
 
 @register_adjustment("media_player", "volume")
 def adjust_media_player_volume(ctx: AdjustmentContext, target: AdjustmentTarget):
-    raise intent.IntentHandleError("unsupport")
+    raise intent.IntentHandleError("unsupported")
 
 
 @register_adjustment("media_player", "brightness")
 def adjust_media_player_brightness(ctx: AdjustmentContext, target: AdjustmentTarget):
-    raise intent.IntentHandleError("unsupport")
+    raise intent.IntentHandleError("unsupported")
 
 
 class AdjustDeviceAttributeIntent(intent.IntentHandler):

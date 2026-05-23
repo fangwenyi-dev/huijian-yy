@@ -1,3 +1,4 @@
+import asyncio
 import html as html_mod
 import logging
 from datetime import datetime
@@ -221,10 +222,15 @@ class TestSceneView(HomeAssistantView):
                 params = action.get("params") or action.get("parameters", {})
                 ha_slots = {k: {"value": v} for k, v in params.items()}
                 try:
-                    await ha_intent.async_handle(
-                        hass, DOMAIN, intent_name, slots=ha_slots,
-                    )
+                    async with asyncio.timeout(30):
+                        await ha_intent.async_handle(
+                            hass, DOMAIN, intent_name, slots=ha_slots,
+                        )
                     executed.append({"intent": intent_name, "result": "success"})
+                except asyncio.TimeoutError:
+                    has_errors = True
+                    _LOGGER.error("Test scene action timed out: %s", intent_name)
+                    executed.append({"intent": intent_name, "result": "error", "error": "执行超时"})
                 except Exception as e:
                     has_errors = True
                     _LOGGER.error("Test scene action failed: %s: %s", intent_name, e)

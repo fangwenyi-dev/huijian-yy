@@ -66,66 +66,104 @@ class HuijianControlAPI(llm.API):
         )
 
     @callback
-    def _build_entity_prompt(self, llm_context: llm.LLMContext | None = None) -> str:
-        """Build operation guide + compact device name reference."""
+    def _should_include_entity(
+        self, state, entity_reg, llm_context: llm.LLMContext | None,
+    ) -> tuple[bool, er.RegistryEntry | None]:
+        """Check if entity should be included. Returns (include, entry)."""
         from .intent_live_context import async_should_expose
 
+        assistant = llm_context.assistant if llm_context and hasattr(llm_context, "assistant") else None
+        if assistant:
+            try:
+                if not async_should_expose(self.hass, assistant, state.entity_id):
+                    return False, None
+            except (KeyError, Exception):
+                pass
+        entry = entity_reg.async_get(state.entity_id)
+        if not entry or entry.hidden_by or entry.disabled_by:
+            return False, None
+        return True, entry
+
+    @callback
+    def _get_entity_area_name(self, entry, area_reg) -> str | None:
+        """Get area display name for an entity registry entry."""
+        if entry and entry.area_id:
+            area = area_reg.async_get_area(entry.area_id)
+            if area:
+                return area.name
+        return None
+
+    @callback
+    def _format_entity_line(self, state, entry) -> str:
+        """Format a single entity line for the prompt."""
+        name = state.name or state.entity_id
+        aliases = entry.aliases or []
+        alias_str = f"/{'/'.join(str(a) for a in aliases)}" if aliases else ""
+        return f"{name}({state.domain}{alias_str})"
+
+    @callback
+    def _build_entity_prompt(self, llm_context: llm.LLMContext | None = None) -> str:
+        """Build operation guide + compact device name reference."""
         parts = [
-            "\u64cd\u4f5c\u6307\u5357:",
-            "1. \u7b80\u5355\u7684\u5f00\u5173\u8bbe\u5907\u76f4\u63a5\u7528 HassTurnDeviceOn/HassTurnDeviceOff\uff0c\u65e0\u9700\u5148\u67e5\u8be2\u72b6\u6001",
-            "2. \u8c03\u5c5e\u6027(\u4eae\u5ea6/\u989c\u8272/\u6e29\u5ea6/\u98ce\u901f)\u7528HassAdjustDeviceAttribute",
-            "3. \u8bbe\u7a7a\u8c03\u6a21\u5f0f\u7528HassSetDeviceMode",
-            "4. \u7a97\u6237\u76f8\u5173\u64cd\u4f5c(\u5f00\u7a97/\u5173\u7a97/\u6682\u505c/\u5185\u5012)\u7528ControlWindow",
-            "5. \u9700\u8981\u67e5\u8be2\u8bbe\u5907\u5f53\u524d\u72b6\u6001\u65f6\u624d\u7528HuijianGetLiveContext\uff08\u5982\"\u706f\u662f\u5f00\u7684\u5417\"\u201c\u6e29\u5ea6\u591a\u5c11\"\uff09",
-            "6. target\u683c\u5f0f: target=[{devices: [{domains: ['light'], name: '\u7b52\u706f'}], area: '\u529e\u516c\u5ba4'}]",
-            "7. \u5b9e\u4f53\u540d\u7528\u4e2d\u6587\u7cbe\u786e\u5339\u914d\uff0c\u533a\u57df\u540d\u4e5f\u7528\u4e2d\u6587",
-            f"8. \u9886\u57df\u522b\u540d: {_DOMAIN_ALIASES}",
-            "9. delta\u683c\u5f0f: +10(\u589e\u52a0) -10(\u51cf\u5c11) 50(\u8bbe\u503c) 50%(\u8bbe\u767e\u5206\u6bd4) max/min(\u6781\u9650) #FF0000(\u8272\u503c)",
-            "10. mode\u53ef\u9009\u503c: heat/cool/auto/dry/fan_only(\u7a7a\u8c03/\u6c14\u5019\u8bbe\u5907)",
+            "操作指南:",
+            "1. 简单的开关设备直接用 HassTurnDeviceOn/HassTurnDeviceOff，无需先查询状态",
+            "2. 调属性(亮度/颜色/温度/风速)用HassAdjustDeviceAttribute",
+            "3. 设空调模式用HassSetDeviceMode",
+            "4. 窗户相关操作(开窗/关窗/暂停/内倒)用ControlWindow",
+            '5. 需要查询设备当前状态时才用HuijianGetLiveContext（如"灯是开的吗""温度多少"）',
+            "6. target格式: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '办公室'}]",
+            "7. 实体名用中文精确匹配，区域名也用中文",
+            f"8. 领域别名: {_DOMAIN_ALIASES}",
+            "9. delta格式: +10(增加) -10(减少) 50(设值) 50%(设百分比) max/min(极限) #FF0000(色值)",
+            "10. mode可选值: heat/cool/auto/dry/fan_only(空调/气候设备)",
         ]
 
-        assistant = llm_context.assistant if llm_context and hasattr(llm_context, "assistant") else None
-        from homeassistant.helpers import area_registry as ar, entity_registry as er
+        from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 
         area_reg = ar.async_get(self.hass)
         entity_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
 
-        area_entities: dict[str, list[str]] = {}
-        no_area_entities: list[str] = []
         _MAX_ENTITIES = 40
 
+        # 1. 获取说话人所在区域
+        speaker_area_name = None
+        if llm_context and llm_context.device_id:
+            device = dev_reg.async_get(llm_context.device_id)
+            if device and device.area_id:
+                area_entry = area_reg.async_get_area(device.area_id)
+                if area_entry:
+                    speaker_area_name = area_entry.name
+
+        # 2. 单次遍历：分三桶收集（说话人区域 / 其他区域 / 无区域）
+        speaker_entities: list[str] = []
+        area_entities: dict[str, list[str]] = {}
+        no_area_entities: list[str] = []
+
         for state in self.hass.states.async_all():
-            if len(area_entities) + len(no_area_entities) >= _MAX_ENTITIES:
+            if len(speaker_entities) + len(no_area_entities) + sum(len(v) for v in area_entities.values()) >= _MAX_ENTITIES:
                 break
-            if assistant:
-                try:
-                    if not async_should_expose(self.hass, assistant, state.entity_id):
-                        continue
-                except (KeyError, Exception):
-                    pass
-            entry = entity_reg.async_get(state.entity_id)
-            if not entry or entry.hidden_by or entry.disabled_by:
+            included, entry = self._should_include_entity(state, entity_reg, llm_context)
+            if not included:
                 continue
-            name = state.name
-            area_name = None
-            if entry.area_id:
-                area = area_reg.async_get_area(entry.area_id)
-                if area:
-                    area_name = area.name
-            aliases = entry.aliases or []
-            alias_str = f"/{'/'.join(str(a) for a in aliases)}" if aliases else ""
-            line = f"{name}({state.domain}{alias_str})"
-            if area_name:
+            area_name = self._get_entity_area_name(entry, area_reg)
+            line = self._format_entity_line(state, entry)
+            if speaker_area_name and area_name == speaker_area_name:
+                speaker_entities.append(line)
+            elif area_name:
                 area_entities.setdefault(area_name, []).append(line)
             else:
                 no_area_entities.append(line)
 
-        if area_entities or no_area_entities:
-            parts.append("\u53ef\u7528\u8bbe\u5907(\u6309\u533a\u57df):")
+        # 3. 拼接 prompt：说话人区域排最前
+        if speaker_entities or area_entities or no_area_entities:
+            parts.append("可用设备(按区域):")
+            if speaker_entities:
+                parts.append(f"  [{speaker_area_name}]: {', '.join(speaker_entities)}")
             for area in sorted(area_entities):
                 parts.append(f"  [{area}]: {', '.join(area_entities[area])}")
             if no_area_entities:
-                parts.append(f"  [\u5176\u4ed6]: {', '.join(no_area_entities)}")
+                parts.append(f"  [其他]: {', '.join(no_area_entities)}")
 
         return "\n".join(parts)
 

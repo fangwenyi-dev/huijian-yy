@@ -20,6 +20,8 @@ _LOGGER = logging.getLogger(__name__)
 
 ACTION_CHINESE = {"open": "开启", "close": "关闭", "pause": "暂停", "a": "内倒"}
 
+ACTION_CHINESE = {"open": "开启", "close": "关闭", "pause": "暂停", "a": "内倒"}
+
 
 async def _press_multi_buttons(
     hass, context, action: str, button_entity_ids: list[str]
@@ -111,6 +113,12 @@ class ControlWindowIntent(intent.IntentHandler):
                     results = await _press_multi_buttons(
                         intent_obj.hass, intent_obj.context, action, all_buttons
                     )
+                    if not results:
+                        return {
+                            "success": False,
+                            "error": f"未能{ACTION_CHINESE.get(action, action)}任何窗户",
+                            "buttons": results,
+                        }
                     return {
                         "success": True,
                         "message": f"已{ACTION_CHINESE.get(action, action)}所有窗户",
@@ -140,6 +148,12 @@ class ControlWindowIntent(intent.IntentHandler):
                     results = await _press_multi_buttons(
                         intent_obj.hass, intent_obj.context, action, all_buttons
                     )
+                    if not results:
+                        return {
+                            "success": False,
+                            "error": f"未能{ACTION_CHINESE.get(action, action)}任何窗户",
+                            "buttons": results,
+                        }
                     return {
                         "success": True,
                         "message": f"已{ACTION_CHINESE.get(action, action)}所有窗户",

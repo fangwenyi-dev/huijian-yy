@@ -195,13 +195,15 @@ class StateWithAreaConstraint:
     unset_area_constraint: bool
 
 
-async def match_intent_entities(
-    intent_obj: intent.Intent, targets: list[HaTargetItem]
-) -> tuple[dict | None, list[EntityInfo] | None]:
-    """Match entities by request parameters."""
-    hass = intent_obj.hass
+async def _match_with_constraints(
+    hass: HomeAssistant,
+    targets: list[HaTargetItem],
+    assistant: str | None,
+) -> tuple[list[StateWithAreaConstraint], set[str]]:
+    """Match targets with given assistant constraint. Returns states + expanded domains."""
     found_states: list[StateWithAreaConstraint] = []
     all_expanded_domains: set[str] = set()
+
     for target in targets:
         for device in target["devices"]:
             area_name = target.get("area")
@@ -211,108 +213,81 @@ async def match_intent_entities(
                 name=device.get("name"),
                 area_name=area_name,
                 domains=expanded_domains,
-                assistant=intent_obj.assistant,
+                assistant=assistant,
                 single_target=False,
                 allow_duplicate_names=True,
             )
-            _LOGGER.info("Match intent constraints: %s", match_constraints)
+            _LOGGER.info("Match constraints (assistant=%s): %s", assistant, match_constraints)
             match_result = intent.async_match_targets(hass, match_constraints)
-
             if not match_result.is_match:
                 continue
-
-            unset_area_constraint = area_name == ""
             found_states.append(
                 StateWithAreaConstraint(
                     states=match_result.states,
-                    unset_area_constraint=unset_area_constraint,
+                    unset_area_constraint=(area_name == ""),
                 )
             )
 
-    candidate_entities: list[EntityInfo] = []
-    entity_registry = er.async_get(hass)
-    for item in found_states:
+    return found_states, all_expanded_domains
 
+
+def _build_candidate_entities(
+    hass: HomeAssistant,
+    found_states: list[StateWithAreaConstraint],
+    entity_registry: er.Registry,
+) -> list[EntityInfo]:
+    """Build candidate EntityInfo list from matched states."""
+    candidate_entities: list[EntityInfo] = []
+
+    for item in found_states:
         for state in item.states:
             if state.state == "unavailable":
                 continue
-
             entity_entry = entity_registry.async_get(state.entity_id)
             if not entity_entry:
                 continue
-
             entity_area = get_entity_area(hass, entity_entry)
             if item.unset_area_constraint and entity_area:
                 continue
-
             entity_name = get_entity_name(entity_entry, state)
-            on_off = "off" if state.state == "off" else "on"
-            entity_info = EntityInfo(
-                name=entity_name,
-                area=entity_area,
-                state=state,
-                entity=entity_entry,
-                on_off=on_off,
-            )
-            _LOGGER.info("Match intent available target: %s", entity_info)
-            candidate_entities.append(entity_info)
-
-    if len(candidate_entities) == 0:
-        _LOGGER.warning(
-            f"Strict match failed (assistant={intent_obj.assistant}), trying fallback without assistant filter"
-        )
-        found_states = []
-        for target in targets:
-            for device in target["devices"]:
-                area_name = target.get("area")
-                expanded_domains = _expand_domains(device["domains"])
-                all_expanded_domains.update(expanded_domains)
-                match_constraints = intent.MatchTargetsConstraints(
-                    name=device.get("name"),
-                    area_name=area_name,
-                    domains=expanded_domains,
-                    assistant=None,
-                    single_target=False,
-                    allow_duplicate_names=True,
-                )
-                _LOGGER.info("Fallback match constraints: %s", match_constraints)
-                match_result = intent.async_match_targets(hass, match_constraints)
-
-                if not match_result.is_match:
-                    continue
-
-                unset_area_constraint = area_name == ""
-                found_states.append(
-                    StateWithAreaConstraint(
-                        states=match_result.states,
-                        unset_area_constraint=unset_area_constraint,
-                    )
-                )
-
-        for item in found_states:
-            for state in item.states:
-                if state.state == "unavailable":
-                    continue
-
-                entity_entry = entity_registry.async_get(state.entity_id)
-                if not entity_entry:
-                    continue
-
-                entity_area = get_entity_area(hass, entity_entry)
-                if item.unset_area_constraint and entity_area:
-                    continue
-
-                entity_name = get_entity_name(entity_entry, state)
-                on_off = "off" if state.state == "off" else "on"
-                entity_info = EntityInfo(
+            candidate_entities.append(
+                EntityInfo(
                     name=entity_name,
                     area=entity_area,
                     state=state,
                     entity=entity_entry,
-                    on_off=on_off,
+                    on_off="off" if state.state == "off" else "on",
                 )
-                _LOGGER.info("Fallback match intent available target: %s", entity_info)
-                candidate_entities.append(entity_info)
+            )
+
+    return candidate_entities
+
+
+async def match_intent_entities(
+    intent_obj: intent.Intent, targets: list[HaTargetItem]
+) -> tuple[dict | None, list[EntityInfo] | None]:
+    """Match entities by request parameters."""
+    hass = intent_obj.hass
+    entity_registry = er.async_get(hass)
+
+    # 第一轮：严格匹配（带 assistant）
+    found_states, domains1 = await _match_with_constraints(
+        hass, targets, intent_obj.assistant
+    )
+    all_expanded_domains = domains1.copy()
+    candidate_entities = _build_candidate_entities(hass, found_states, entity_registry)
+
+    # 第二轮：无 assistant 回退
+    if len(candidate_entities) == 0:
+        _LOGGER.warning(
+            "Strict match failed (assistant=%s), trying fallback without assistant filter",
+            intent_obj.assistant,
+        )
+        found_states2, domains2 = await _match_with_constraints(
+            hass, targets, None
+        )
+        all_expanded_domains.update(domains2)
+        candidate_entities = _build_candidate_entities(hass, found_states2, entity_registry)
 
     # ── 精确名称优先过滤 ──
     # 如果 LLM 指定了 name，优先匹配完全相同的实体名
