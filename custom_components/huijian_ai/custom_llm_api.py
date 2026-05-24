@@ -4,7 +4,6 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent, llm
 
 from .const import DOMAIN
@@ -12,6 +11,20 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 _DOMAIN_ALIASES = "lamp\u2192light, ac\u2192climate, curtain\u2192cover, window\u2192cover/button"
+
+_PROMPT_OPERATION_GUIDE = (
+    "操作指南:\n"
+    "1. 简单开关用HassTurnDeviceOn/Off，不用先查状态\n"
+    "2. 调亮度/温度/风速等用HassAdjustDeviceAttribute\n"
+    "3. 空调设模式用HassSetDeviceMode\n"
+    "4. 窗户开/关/暂停/内倒用ControlWindow\n"
+    "5. 查设备状态(开关/温度等)用HuijianGetLiveContext\n"
+    "6. target格式: [{devices: [{domains: ['light'], name: '筒灯'}], area: '办公室'}]\n"
+    "7. 实体名用中文精确匹配，区域名也用中文\n"
+    f"8. 领域别名: {_DOMAIN_ALIASES}\n"
+    "9. delta格式: +10(增) -10(减) 50(设值) 50%(百分比) max/min(极限)\n"
+    "10.mode: heat/cool/auto/dry/fan_only"
+)
 
 
 def _build_slots(params: dict) -> dict:
@@ -104,22 +117,10 @@ class HuijianControlAPI(llm.API):
 
     @callback
     def _build_entity_prompt(self, llm_context: llm.LLMContext | None = None) -> str:
-        """Build operation guide + compact device name reference."""
-        parts = [
-            "操作指南:",
-            "1. 简单的开关设备直接用 HassTurnDeviceOn/HassTurnDeviceOff，无需先查询状态",
-            "2. 调属性(亮度/颜色/温度/风速)用HassAdjustDeviceAttribute",
-            "3. 设空调模式用HassSetDeviceMode",
-            "4. 窗户相关操作(开窗/关窗/暂停/内倒)用ControlWindow",
-            '5. 需要查询设备当前状态时才用HuijianGetLiveContext（如"灯是开的吗""温度多少"）',
-            "6. target格式: target=[{devices: [{domains: ['light'], name: '筒灯'}], area: '办公室'}]",
-            "7. 实体名用中文精确匹配，区域名也用中文",
-            f"8. 领域别名: {_DOMAIN_ALIASES}",
-            "9. delta格式: +10(增加) -10(减少) 50(设值) 50%(设百分比) max/min(极限) #FF0000(色值)",
-            "10. mode可选值: heat/cool/auto/dry/fan_only(空调/气候设备)",
-        ]
+        """Build system prompt: guide + device name reference."""
+        parts = [_PROMPT_OPERATION_GUIDE]
 
-        from homeassistant.helpers import area_registry as ar, device_registry as dr
+        from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 
         area_reg = ar.async_get(self.hass)
         entity_reg = er.async_get(self.hass)
@@ -158,7 +159,7 @@ class HuijianControlAPI(llm.API):
                 no_area_entities.append(line)
             _entity_count += 1
 
-        # 3. 拼接 prompt：说话人区域排最前
+        # 3. 拼接设备列表：说话人区域排最前
         if speaker_entities or area_entities or no_area_entities:
             parts.append("可用设备(按区域):")
             if speaker_entities:
@@ -175,30 +176,23 @@ class HuijianControlAPI(llm.API):
         return [
             _Tool(
                 "HassTurnDeviceOn",
-                "Turns on/opens/presses a device. "
-                "Use for: lights (e.g., '\u6253\u5f00\u5367\u5ba4\u7b52\u706f'), buttons (e.g., '\u6309\u573a\u666f\u6309\u94ae'), "
-                "covers/curtains (e.g., '\u6253\u5f00\u7a97\u5e18'), climate/lock/valve/vacuum/alarm. "
-                "NOTE: Window commands (\u5f00\u7a97/\u5173\u7a97) are automatically forwarded to ControlWindow. "
-                "Target format: target=[{devices: [{domains: ['light'], name: '\u7b52\u706f'}], area: '\u529e\u516c\u5ba4'}].",
+                "Turn on/open device. e.g. '打开卧室筒灯'(light), '按场景按钮'(button), '打开窗帘'(cover). "
+                "NOTE: 开窗/关窗 auto-forwarded to ControlWindow.",
                 self._handle_turn_on,
                 vol.Schema({vol.Required("target"): _target_schema()}),
             ),
             _Tool(
                 "HassTurnDeviceOff",
-                "Turns off/closes a device. "
-                "Use for: lights (e.g., '\u5173\u95ed\u5367\u5ba4\u7b52\u706f'), covers/curtains (e.g., '\u5173\u95ed\u7a97\u5e18'), "
-                "climate/lock/valve/vacuum/alarm. "
-                "NOTE: Window commands (\u5f00\u7a97/\u5173\u7a97) are automatically forwarded to ControlWindow. "
-                "Target format: target=[{devices: [{domains: ['light'], name: '\u7b52\u706f'}], area: '\u529e\u516c\u5ba4'}].",
+                "Turn off/close device. e.g. '关闭卧室筒灯'(light), '关闭窗帘'(cover). "
+                "NOTE: 开窗/关窗 auto-forwarded to ControlWindow.",
                 self._handle_turn_off,
                 vol.Schema({vol.Required("target"): _target_schema()}),
             ),
             _Tool(
                 "HassSetDeviceMode",
-                "Set the operation mode of a device. "
-                "Supported devices: climate(heat/cool/auto/dry/fan_only), humidifier. "
-                "Examples: '\u628a\u7a7a\u8c03\u8bbe\u4e3a\u5236\u70ed\u6a21\u5f0f' -> mode=heat, target=\u7a7a\u8c03. "
-                "'\u628a\u7a7a\u8c03\u8bbe\u4e3a26\u5ea6\u5236\u51b7' -> use HassAdjustDeviceAttribute with attribute=temperature instead.",
+                "Set device mode. climate(heat/cool/auto/dry/fan_only), humidifier. "
+                "e.g. '把空调设为制热模式'(mode=heat). "
+                "温度值用HassAdjustDeviceAttribute，非此工具.",
                 self._handle_set_mode,
                 vol.Schema({
                     vol.Required("target"): _target_schema(),
@@ -207,13 +201,11 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassAdjustDeviceAttribute",
-                "Set or adjust a device attribute value. "
-                "Supported attributes: brightness(light), color(light), temperature(light/climate), "
+                "Set/adjust device attribute. "
+                "attributes: brightness(light), color(light), temperature(light/climate), "
                 "position(cover), fan_speed(fan/climate), humidity(humidifier), volume(media_player). "
-                "Delta format: '+10'=increase, '-5'=decrease, "
-                "'50'=set absolute, '50%'=percent, 'max'/'min'=special values. "
-                "Examples: '\u628a\u5367\u5ba4\u706f\u8c03\u4eae20%' -> attribute=brightness, delta=+20, target=\u5367\u5ba4\u706f. "
-                "'\u628a\u7a7a\u8c03\u6e29\u5ea6\u8c03\u523026\u5ea6' -> attribute=temperature, delta=26, target=\u7a7a\u8c03.",
+                "delta: +10(增), -5(减), 50(设值), 50%(百分比), max/min(极限). "
+                "e.g. '把卧室灯调亮20%'(brightness,+20), '空调调到26度'(temperature,26).",
                 self._handle_adjust_attribute,
                 vol.Schema({
                     vol.Required("target"): _target_schema(),
@@ -224,10 +216,8 @@ class HuijianControlAPI(llm.API):
             _Tool(
                 "ControlWindow",
                 "Unified entry for ALL window commands (open/close/pause/tilt). "
-                "Action keywords: \u5f00/\u5f00\u542f=open, \u5173/\u5173\u95ed=close, \u6682\u505c/\u505c\u6b62/\u505c=pause, \u5185\u5012/\u5185\u5c9b=A(tilt). "
-                "Examples: '\u5185\u5c9b\u5c55\u5385\u7a97\u6237' -> action=A, area=\u5c55\u5385, name=\u7a97\u6237. "
-                "'\u6253\u5f00\u5e73\u63a8\u7a97' -> action=open, name=\u5e73\u63a8\u7a97. "
-                "Valid window names: \u5e73\u63a8\u7a97,\u5e73\u5f00\u7a97,\u63a8\u62c9\u7a97,\u5185\u5f00\u7a97,\u5916\u5f00\u7a97,\u5929\u7a97,\u98d8\u7a97,\u667a\u80fd\u7a97,\u7a97\u6237.",
+                "action: 开/开启=open, 关/关闭=close, 暂停/停止/停=pause, 内倒/内岛=A(tilt). "
+                "e.g. '内岛展厅窗户'(A,展厅), '打开平推窗'(open,平推窗).",
                 self._handle_control_window,
                 vol.Schema({
                     vol.Required("action"): cv.string,
@@ -236,23 +226,18 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HuijianGetLiveContext",
-                "Provides real-time information about the CURRENT state, value, or mode of devices, sensors, entities, or areas. "
-                "Use this tool for: "
-                "1. Answering questions about current conditions (e.g., 'Is the light on?'). "
-                "2. As the first step in conditional actions (e.g., 'If there is someone in the bedroom, turn on the bedroom light'). "
+                "Query real-time state/condition of devices/sensors/areas. "
+                "Use for: '灯是开的吗', '温度多少', or as first step of conditional actions. "
                 "No parameters required.",
                 self._call_intent_factory("huijianGetLiveContext"),
                 vol.Schema({}),
             ),
             _Tool(
                 "HassCreateVoiceScene",
-                "Creates a voice-triggered scene that stores trigger phrase and actions. "
-                "Use ONLY when user says something like '\u5f53\u6211\u8bf4xxx\u7684\u65f6\u5019\uff0c\u5e2e\u6211\u6267\u884cyyy', "
-                "'\u4f60\u542c\u5230\u6211\u8bf4xxx\u5c31yyy', '\u5982\u679c\u6211\u8bf4xxx\u5c31\u5f00\u673a'. "
-                "DO NOT use for sensor/condition-based triggers (temperature, humidity, etc.) - "
-                "use HassCreateAutomation for those. "
-                "Parameters: trigger_phrase (a spoken phrase that will trigger the scene), "
-                "actions (array of intent+params objects).",
+                "Create voice-triggered scene. "
+                "Use when: '当我说xxx的时候帮我执行yyy', '你听到我说xxx就yyy'. "
+                "NOT for sensor/condition triggers(use HassCreateAutomation). "
+                "params: trigger_phrase, actions(intent+params array).",
                 self._call_intent_factory("HassCreateVoiceScene"),
                 vol.Schema({
                     vol.Required("trigger_phrase"): cv.string,
@@ -261,17 +246,15 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassTriggerVoiceScene",
-                "Triggers an existing voice scene by its trigger phrase. "
-                "Use when user says the trigger phrase to execute a previously created scene. "
-                "Parameters: trigger_phrase (string).",
+                "Execute voice scene by trigger phrase. "
+                "params: trigger_phrase.",
                 self._call_intent_factory("HassTriggerVoiceScene"),
                 vol.Schema({vol.Required("trigger_phrase"): cv.string}),
             ),
             _Tool(
                 "HassDeleteVoiceScene",
-                "Deletes a voice scene by trigger_phrase or scene_id. "
-                "Use when user says '\u5220\u9664\u573a\u666f' or '\u5220\u9664xxx\u573a\u666f'. "
-                "Parameters: trigger_phrase or scene_id.",
+                "Delete voice scene by trigger_phrase or scene_id. "
+                "e.g. '删除场景', '删除xxx场景'.",
                 self._call_intent_factory("HassDeleteVoiceScene"),
                 vol.Schema({
                     vol.Optional("trigger_phrase"): cv.string,
@@ -280,25 +263,17 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassListVoiceScenes",
-                "Lists all stored voice scenes. "
-                "Use when user wants to see all created scenes. "
-                "No parameters required.",
+                "List all stored voice scenes. No parameters.",
                 self._call_intent_factory("HassListVoiceScenes"),
                 vol.Schema({}),
             ),
             _Tool(
                 "HassCreateAutomation",
-                "Creates a sensor-triggered automation that monitors a sensor and executes actions "
-                "when its value crosses a threshold. "
-                "Use when user says things like '\u5f53\u6e29\u5ea6\u5927\u4e8e30\u5ea6\u5c31\u6253\u5f00\u7a97\u6237', "
-                "'\u5982\u679c\u4f20\u611f\u5668\u68c0\u6d4b\u5230xxx\u5c31\u6267\u884cyyy'. "
-                "DO NOT use for voice-triggered scenes (use HassCreateVoiceScene for that). "
-                "Parameters: "
-                "trigger (object with entity_id of sensor, and optionally above/below thresholds), "
-                "actions (array of intent action objects, same format as voice scene actions). "
-                "Examples: "
-                "trigger={entity_id:'sensor.office_temperature', above:29}, "
-                "actions=[{name:'ControlWindow', parameters:{action:'open', target:[{area:'\u5367\u5ba4', devices:[{name:'\u5e73\u63a8\u7a97'}]}]}}]",
+                "Create sensor-triggered automation. "
+                "Use when: '当温度大于30度就开窗', '如果传感器检测到xxx就yyy'. "
+                "NOT for voice-triggered(use HassCreateVoiceScene). "
+                "params: trigger(entity_id, above/below), actions(intent+params array). "
+                "e.g. trigger={entity_id:'sensor.office_temperature', above:29}",
                 self._call_intent_factory("HassCreateAutomation"),
                 vol.Schema({
                     vol.Required("trigger"): {
@@ -311,29 +286,21 @@ class HuijianControlAPI(llm.API):
             ),
             _Tool(
                 "HassDeleteAutomation",
-                "Deletes an automation by automation_id. "
-                "Use when user says '\u5220\u9664\u81ea\u52a8\u5316' or '\u5220\u9664xxx\u81ea\u52a8\u5316'. "
-                "Parameters: automation_id (string required).",
+                "Delete automation by automation_id. e.g. '删除自动化'. params: automation_id.",
                 self._call_intent_factory("HassDeleteAutomation"),
                 vol.Schema({vol.Required("automation_id"): cv.string}),
             ),
             _Tool(
                 "HassListAutomations",
-                "Lists all stored sensor-triggered automations. "
-                "Use when user says '\u67e5\u770b\u81ea\u52a8\u5316' or '\u6709\u54ea\u4e9b\u81ea\u52a8\u5316'. "
-                "No parameters required.",
+                "List all stored automations. e.g. '查看自动化', '有哪些自动化'. No parameters.",
                 self._call_intent_factory("HassListAutomations"),
                 vol.Schema({}),
             ),
             _Tool(
                 "HassUpdateAutomation",
-                "Updates an existing sensor-triggered automation's trigger or actions. "
-                "Use when user wants to modify a previously created automation. "
-                "Parameters: automation_id (string required), "
-                "trigger (optional object with entity_id, above/below), "
-                "actions (optional array of intent action objects). "
-                "Example: automation_id='automation_20260508185741', "
-                "trigger={entity_id:'sensor.office_temperature', above:30}",
+                "Update automation trigger or actions by automation_id. "
+                "params: automation_id(required), trigger(entity_id,above/below), actions. "
+                "e.g. trigger={entity_id:'sensor.office_temperature', above:30}",
                 self._call_intent_factory("HassUpdateAutomation"),
                 vol.Schema({
                     vol.Required("automation_id"): cv.string,
@@ -396,10 +363,6 @@ class HuijianControlAPI(llm.API):
                         _LOGGER.info(
                             "Auto-injected domains=%s for device '%s' from HA states",
                             matching_domains, name,
-                        )
-                    else:
-                        _LOGGER.warning(
-                            "No matching HA states found for device '%s', domain auto-injection failed", name,
                         )
         return arguments
 

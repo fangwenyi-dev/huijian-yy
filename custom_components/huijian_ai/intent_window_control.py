@@ -20,8 +20,6 @@ _LOGGER = logging.getLogger(__name__)
 
 ACTION_CHINESE = {"open": "开启", "close": "关闭", "pause": "暂停", "a": "内倒"}
 
-ACTION_CHINESE = {"open": "开启", "close": "关闭", "pause": "暂停", "a": "内倒"}
-
 
 async def _press_multi_buttons(
     hass, context, action: str, button_entity_ids: list[str]
