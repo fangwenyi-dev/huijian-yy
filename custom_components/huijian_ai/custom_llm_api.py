@@ -4,6 +4,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent, llm
 
 from .const import DOMAIN
@@ -118,7 +119,7 @@ class HuijianControlAPI(llm.API):
             "10. mode可选值: heat/cool/auto/dry/fan_only(空调/气候设备)",
         ]
 
-        from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
+        from homeassistant.helpers import area_registry as ar, device_registry as dr
 
         area_reg = ar.async_get(self.hass)
         entity_reg = er.async_get(self.hass)
@@ -139,9 +140,10 @@ class HuijianControlAPI(llm.API):
         speaker_entities: list[str] = []
         area_entities: dict[str, list[str]] = {}
         no_area_entities: list[str] = []
+        _entity_count = 0
 
         for state in self.hass.states.async_all():
-            if len(speaker_entities) + len(no_area_entities) + sum(len(v) for v in area_entities.values()) >= _MAX_ENTITIES:
+            if _entity_count >= _MAX_ENTITIES:
                 break
             included, entry = self._should_include_entity(state, entity_reg, llm_context)
             if not included:
@@ -154,6 +156,7 @@ class HuijianControlAPI(llm.API):
                 area_entities.setdefault(area_name, []).append(line)
             else:
                 no_area_entities.append(line)
+            _entity_count += 1
 
         # 3. 拼接 prompt：说话人区域排最前
         if speaker_entities or area_entities or no_area_entities:
@@ -393,6 +396,10 @@ class HuijianControlAPI(llm.API):
                         _LOGGER.info(
                             "Auto-injected domains=%s for device '%s' from HA states",
                             matching_domains, name,
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "No matching HA states found for device '%s', domain auto-injection failed", name,
                         )
         return arguments
 

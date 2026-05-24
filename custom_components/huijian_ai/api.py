@@ -268,7 +268,8 @@ class TestAutomationView(HomeAssistantView):
             if not automation:
                 return self.json({"success": False, "error": "Automation not found"}, status_code=404)
             mgr = get_automation_manager(request.app[KEY_HASS])
-            await mgr._execute_actions(automation.get("actions", []))
+            async with asyncio.timeout(30):
+                await mgr._execute_actions(automation.get("actions", []))
             mgr._add_trigger_log(automation_id, "", "test", "手动测试触发")
             return self.json({"success": True})
         except Exception as e:

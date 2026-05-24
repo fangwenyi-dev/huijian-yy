@@ -139,7 +139,7 @@ class SetDeviceModeIntent(intent.IntentHandler):
             try:
                 handle = handle_map.get(domain, {}).get("mode")
                 if not handle:
-                    raise intent.IntentHandleError("unspported")
+                    raise intent.IntentHandleError("unsupported")
 
                 # Find the paramters to adjust.
                 handle(

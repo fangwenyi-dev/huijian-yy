@@ -34,6 +34,8 @@ REMOVE_KEYWORDS = ["删除", "remove", "shan_chu", "shanchu", "delete"]
 
 # Pre-computed set of all window names (keys + values) for fast reuse
 WINDOW_ALL_NAMES: set[str] = set(WINDOW_NAME_MAPPING.keys()) | set(WINDOW_NAME_MAPPING.values())
+# Pre-sorted by length descending for keyword matching
+WINDOW_ALL_NAMES_SORTED: list[str] = sorted(WINDOW_ALL_NAMES, key=len, reverse=True)
 
 
 def normalize_text(text: str) -> str:
@@ -411,7 +413,7 @@ def find_all_window_buttons_by_action(
 
         # Auto-derive window keywords from WINDOW_NAME_MAPPING
         # so they stay in sync when new window types are added
-        window_keywords = sorted(WINDOW_ALL_NAMES, key=len, reverse=True)
+        window_keywords = WINDOW_ALL_NAMES_SORTED
         has_window_keyword = any(kw.lower() in name_lower for kw in window_keywords)
         if not has_window_keyword:
             continue

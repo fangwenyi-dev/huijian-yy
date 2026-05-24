@@ -661,7 +661,7 @@ class AdjustDeviceAttributeIntent(intent.IntentHandler):
             try:
                 prepare_adjustment = adjustment_functions.get(domain, {}).get(attribute)
                 if not prepare_adjustment:
-                    raise intent.IntentHandleError("unspported")
+                    raise intent.IntentHandleError("unsupported")
 
                 # Find the paramters to adjust.
                 prepare_adjustment(AdjustmentContext(state=state, delta=delta), target)
