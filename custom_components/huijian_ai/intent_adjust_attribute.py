@@ -606,7 +606,7 @@ class AdjustDeviceAttributeIntent(intent.IntentHandler):
     description = (
         "Set or adjust a device attribute value. "
         "Supported attributes: brightness(light), color(light), temperature(light/climate), "
-        "position(cover), fan_speed(fan/climate), humidity(humidifier), volume(media_player). "
+        "position(cover), fan_speed(fan/climate), humidity(humidifier). "
         "Delta format: '+10'/'上调10'=increase, '-5'/'下调5'=decrease, "
         "'50%'/'50度'=set absolute, 'max'/'min'/'low'/'high'=special values. "
         "Examples: '把卧室灯调亮20%' -> attribute=brightness, delta=+20, target=卧室灯. "

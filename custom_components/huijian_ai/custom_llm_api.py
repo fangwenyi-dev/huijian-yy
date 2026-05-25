@@ -126,8 +126,6 @@ class HuijianControlAPI(llm.API):
         entity_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
 
-        _MAX_ENTITIES = 40
-
         # 1. 获取说话人所在区域
         speaker_area_name = None
         if llm_context and llm_context.device_id:
@@ -137,14 +135,15 @@ class HuijianControlAPI(llm.API):
                 if area_entry:
                     speaker_area_name = area_entry.name
 
-        # 2. 单次遍历：分三桶收集（说话人区域 / 其他区域 / 无区域）
+        # 2. 先全量收集所有实体（分三桶）
+        _MAX_COLLECT = 200
         speaker_entities: list[str] = []
         area_entities: dict[str, list[str]] = {}
         no_area_entities: list[str] = []
-        _entity_count = 0
+        _total_collected = 0
 
         for state in self.hass.states.async_all():
-            if _entity_count >= _MAX_ENTITIES:
+            if _total_collected >= _MAX_COLLECT:
                 break
             included, entry = self._should_include_entity(state, entity_reg, llm_context)
             if not included:
@@ -157,17 +156,31 @@ class HuijianControlAPI(llm.API):
                 area_entities.setdefault(area_name, []).append(line)
             else:
                 no_area_entities.append(line)
-            _entity_count += 1
+            _total_collected += 1
 
-        # 3. 拼接设备列表：说话人区域排最前
-        if speaker_entities or area_entities or no_area_entities:
+        # 3. 按优先级截断（说话人区域优先保留）
+        _MAX_ENTITIES = 40
+        remaining = _MAX_ENTITIES
+        display_speaker = speaker_entities[:remaining]
+        remaining -= len(display_speaker)
+        display_areas = {}
+        for area in sorted(area_entities):
+            if remaining <= 0:
+                break
+            take = min(len(area_entities[area]), remaining)
+            display_areas[area] = area_entities[area][:take]
+            remaining -= take
+        display_no_area = no_area_entities[:max(0, remaining)]
+
+        # 4. 拼接设备列表：说话人区域排最前
+        if display_speaker or display_areas or display_no_area:
             parts.append("可用设备(按区域):")
-            if speaker_entities:
-                parts.append(f"  [{speaker_area_name}]: {', '.join(speaker_entities)}")
-            for area in sorted(area_entities):
-                parts.append(f"  [{area}]: {', '.join(area_entities[area])}")
-            if no_area_entities:
-                parts.append(f"  [其他]: {', '.join(no_area_entities)}")
+            if display_speaker:
+                parts.append(f"  [{speaker_area_name}]: {', '.join(display_speaker)}")
+            for area in sorted(display_areas):
+                parts.append(f"  [{area}]: {', '.join(display_areas[area])}")
+            if display_no_area:
+                parts.append(f"  [其他]: {', '.join(display_no_area)}")
 
         return "\n".join(parts)
 
@@ -203,7 +216,7 @@ class HuijianControlAPI(llm.API):
                 "HassAdjustDeviceAttribute",
                 "Set/adjust device attribute. "
                 "attributes: brightness(light), color(light), temperature(light/climate), "
-                "position(cover), fan_speed(fan/climate), humidity(humidifier), volume(media_player). "
+                "position(cover), fan_speed(fan/climate), humidity(humidifier). "
                 "delta: +10(增), -5(减), 50(设值), 50%(百分比), max/min(极限). "
                 "e.g. '把卧室灯调亮20%'(brightness,+20), '空调调到26度'(temperature,26).",
                 self._handle_adjust_attribute,
@@ -351,7 +364,7 @@ class HuijianControlAPI(llm.API):
                     matching_domains = set()
                     name_lower = name.lower().strip()
                     for state in hass.states.async_all():
-                        if name_lower == state.name.lower() or state.name.lower().endswith(name_lower):
+                        if name_lower == state.name.lower() or (len(name_lower) >= 2 and state.name.lower().endswith(name_lower)):
                             matching_domains.add(state.domain)
                     if matching_domains:
                         if not enriched:

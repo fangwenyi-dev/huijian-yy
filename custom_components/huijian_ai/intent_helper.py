@@ -144,8 +144,6 @@ def get_entity_area(
     ):
         area_names.extend(area.aliases)
         area_names.append(area.name)
-        if len(area_names) == 0:
-            return
         return AreaInfo(id=entity_entry.area_id, name=area_names[0])
     elif entity_entry.device_id and (
         device := device_registry.async_get(entity_entry.device_id)
@@ -153,8 +151,6 @@ def get_entity_area(
         if device.area_id and (area := area_registry.async_get_area(device.area_id)):
             area_names.extend(area.aliases)
             area_names.append(area.name)
-            if len(area_names) == 0:
-                return
             return AreaInfo(id=device.area_id, name=area_names[0])
 
 

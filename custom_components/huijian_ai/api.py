@@ -316,9 +316,9 @@ class CombinedManageView(HomeAssistantView):
     <div class="card-header">
         <div><span class="card-trigger scene">"{trigger}"</span><span class="card-tag scene">语音场景</span></div>
         <div>
-            <button class="delete-btn" onclick="deleteScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">删除</button>
-            <button class="edit-btn" onclick="openEditScene('{scene_id}', '{html_mod.escape(trigger.replace("'", "\\'"))}')">编辑</button>
-            <button class="test-btn" onclick="testScene('{html_mod.escape(trigger.replace("'", "\\'"))}')">测试</button>
+            <button class="delete-btn" onclick="deleteScene('{scene_id}', '{html_mod.escape(trigger)}')">删除</button>
+            <button class="edit-btn" onclick="openEditScene('{scene_id}', '{html_mod.escape(trigger)}')">编辑</button>
+            <button class="test-btn" onclick="testScene('{html_mod.escape(trigger)}')">测试</button>
         </div>
     </div>
     <div class="info">创建时间: {created_display}</div>
@@ -374,8 +374,8 @@ class CombinedManageView(HomeAssistantView):
 <div class="card auto" id="auto-{auto_id}">
     <div class="card-header">
         <div><span class="card-trigger auto">{html_mod.escape(trigger_display)}</span><span class="card-tag auto">传感器自动化</span></div>
-        <button class="delete-btn" onclick="deleteAutomation('{auto_id}', '{html_mod.escape(trigger_display.replace("'", "\\'"))}')">删除</button>
-        <button class="edit-btn" onclick="openEditAuto('{auto_id}', '{html_mod.escape(trigger_entity.replace("'", "\\'"))}', '{above if above is not None else ""}', '{below if below is not None else ""}')">编辑</button>
+        <button class="delete-btn" onclick="deleteAutomation('{auto_id}', '{html_mod.escape(trigger_display)}')">删除</button>
+        <button class="edit-btn" onclick="openEditAuto('{auto_id}', '{html_mod.escape(trigger_entity)}', '{above if above is not None else ""}', '{below if below is not None else ""}')">编辑</button>
         <button class="test-btn" onclick="testAutomation('{auto_id}')">测试</button>
     </div>
     <div class="info">创建时间: {created_display}{trigger_info}</div>
